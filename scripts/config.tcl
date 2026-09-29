@@ -61,4 +61,4 @@ set IMPL_STRATEGY "Vivado Implementation Defaults"
 # ===================================================================
 puts "INFO: Loaded configuration for project: $PROJECT_NAME"
 puts "INFO: Top module: $TOP_MODULE"
-puts "INFO: Target device: $PART_NAME"
+puts "INFO: Target board: $BOARD"
