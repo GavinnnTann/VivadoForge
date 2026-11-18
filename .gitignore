@@ -1,106 +1,40 @@
-# ===================================================================
-# FPGA Project Template - Git Ignore File
-# ===================================================================
+# VivadoForge .gitignore
 
-# Vivado build artifacts
+# Build output (forge.py writes everything here; `forge.py clean` deletes it)
 build/
-*.cache/
-*.hw/
-*.ip_user_files/
-*.sim/
-*.runs/
+
+# Per-machine settings: Vivado path, build folder
+forge.local.toml
+
+# Vivado droppings if Vivado is ever run from the repository folder
 .Xil/
-
-# Vivado project files (generated, not needed in repo)
-*.xpr
-*.xpe
-*.wdb
-*.wcfg
-*.data
-*.pb
-*.dcp
-
-# Vivado log and journal files
 *.jou
 *.log
 *.str
 vivado*.backup.*
-hs_err_pid*
 vivado_pid*
-
-# Synthesis and implementation reports (optional - uncomment to keep them)
-*.rpt
-*.rpx
-*.vdi
-
-# Bitstream files (optional - uncomment to keep them in repo)
-# *.bit
-# *.bin
-# *.mcs
-
-# Simulation files
-*.vcd
-*.saif
-*.wlf
+hs_err_pid*
+webtalk*
 xsim.dir/
-modelsim.ini
-transcript
-work/
+*.wdb
+*.vcd
+*.pb
+usage_statistics_webtalk.*
 
-# OS-specific files
-.DS_Store
-Thumbs.db
-ehthumbs.db
-Desktop.ini
+# Python
+__pycache__/
+*.py[cod]
 
-# VS Code workspace settings (keep extensions.json and tasks.json)
-.vscode/.browse.c_cpp.db*
+# Editors and OS
+.vscode/*.db*
 .vscode/c_cpp_properties.json
 .vscode/launch.json
 .vscode/ipch/
-
-# Python (if using Cocotb or other Python tools)
-__pycache__/
-*.py[cod]
-*$py.class
-*.egg-info/
-.pytest_cache/
-
-# Backup and temporary files
-*~
 *.swp
-*.swo
-*.bak
-*.backup
-*.tmp
+*~
+.DS_Store
+Thumbs.db
+Desktop.ini
 
-# User-specific files (optional)
-# Uncomment if you don't want to share specific configurations
-# scripts/config.tcl
-
-# ===================================================================
-# Personal Projects Directory
-# ===================================================================
-# Keep your personal FPGA projects private - only template examples
-# in src/ folder will be public
-src_main/
-Homework/
-Display_codes/
-constraints/stopwatch.xdc
-testbench/stopwatch_tb.v
-testbench/i2s_master_tb.v
-testbench/acoustic_top_tb.v
-testbench/fft_512_tb.v
-constraints/acoustic_fingerprint.xdc
-constraints/recorder.xdc
-constraints/uart_adc.xdc
-.github/prompts/plan-fpgaAcousticFingerprint.prompt.md
-
-# Specific template source files to ignore (optional cleanup)
-src/7seg_top.v
-src/7seg.v
-src/clk_div.v
-src/drv_7segment.v
-src/drv_mcp3202.v
-src/drv_uart_tx.v
-src/top_module.v
+# Claude Code local settings (the shared .claude/settings.json is committed)
+.claude/settings.local.json
