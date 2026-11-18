@@ -1,0 +1,41 @@
+{
+  "schema": 1,
+  "name": "Digilent Basys 3",
+  "vendor": "Digilent",
+  "part": "xc7a35tcpg236-1",
+  "master_xdc": "master.xdc",
+  "master_xdc_source": "https://github.com/Digilent/digilent-xdc/blob/master/Basys-3-Master.xdc",
+  "reference_manual": "https://digilent.com/reference/programmable-logic/basys-3/reference-manual",
+  "clock": { "port": "clk", "freq_hz": 100000000 },
+  "xdc_config": [
+    "set_property CFGBVS VCCO [current_design]",
+    "set_property CONFIG_VOLTAGE 3.3 [current_design]",
+    "set_property BITSTREAM.GENERAL.COMPRESS TRUE [current_design]",
+    "set_property BITSTREAM.CONFIG.CONFIGRATE 33 [current_design]"
+  ],
+  "flash": {
+    "parts": ["s25fl032p-spi-x1_x2_x4", "s25fl032*spi*"],
+    "size_mb": 4,
+    "interface": "SPIx1",
+    "verified_on_hardware": false
+  },
+  "roles": {
+    "clock":   { "ports": ["clk"], "dir": "in", "note": "100 MHz oscillator." },
+    "led":     { "ports": ["led[*]"], "dir": "out", "active_low": false, "note": "16 LEDs LD0-LD15." },
+    "switch":  { "ports": ["sw[*]"], "dir": "in", "active_low": false, "note": "16 slide switches, 1 = up. Synchronise before use." },
+    "button":  { "ports": ["btnC", "btnU", "btnL", "btnR", "btnD"], "dir": "in", "active_low": false, "note": "Centre, up, left, right, down. Read 1 when pressed. Debounce." },
+    "seg":     { "ports": ["seg[*]"], "dir": "out", "active_low": true, "note": "Cathodes CA..CG (seg[0]=A ... seg[6]=G), shared by all digits. 0 lights a segment." },
+    "dp":      { "ports": ["dp"], "dir": "out", "active_low": true, "note": "Decimal point cathode, 0 lights it." },
+    "digit":   { "ports": ["an[*]"], "dir": "out", "active_low": true, "note": "Digit enables AN0-AN3 (an[0] = rightmost), 0 enables. Multiplex at about 1 kHz per digit." },
+    "uart_tx": { "ports": ["RsTx"], "dir": "out", "note": "FPGA transmit -> USB-UART bridge -> PC. Idle high." },
+    "uart_rx": { "ports": ["RsRx"], "dir": "in", "note": "PC -> USB-UART bridge -> FPGA receive. Asynchronous: synchronise." },
+    "pmod_ja": { "ports": ["JA[*]"], "dir": "inout" },
+    "pmod_jb": { "ports": ["JB[*]"], "dir": "inout" },
+    "pmod_jc": { "ports": ["JC[*]"], "dir": "inout" },
+    "vga":     { "ports": ["vgaRed[*]", "vgaGreen[*]", "vgaBlue[*]", "Hsync", "Vsync"], "dir": "out", "note": "12-bit VGA. 640x480@60 needs a 25 MHz pixel enable (100 MHz / 4)." }
+  },
+  "notes": [
+    "The 7-segment display is common-anode with inverted (active-low) anode drivers: both segments and digit enables are active-low.",
+    "Flash part per the Basys 3 reference manual (32 Mbit). The flash flow is untested on this board; check the part in Vivado's Hardware Manager if programming fails."
+  ]
+}

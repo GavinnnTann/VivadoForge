@@ -1,0 +1,42 @@
+{
+  "schema": 1,
+  "name": "Digilent Nexys A7-100T",
+  "vendor": "Digilent",
+  "part": "xc7a100tcsg324-1",
+  "master_xdc": "master.xdc",
+  "master_xdc_source": "https://github.com/Digilent/digilent-xdc/blob/master/Nexys-A7-100T-Master.xdc",
+  "reference_manual": "https://digilent.com/reference/programmable-logic/nexys-a7/reference-manual",
+  "clock": { "port": "CLK100MHZ", "freq_hz": 100000000 },
+  "xdc_config": [
+    "set_property CFGBVS VCCO [current_design]",
+    "set_property CONFIG_VOLTAGE 3.3 [current_design]"
+  ],
+  "flash": {
+    "parts": ["s25fl128sxxxxxx0-spi-x1_x2_x4", "s25fl128sxxxxxx1-spi-x1_x2_x4", "mt25ql128-spi-x1_x2_x4", "s25fl128*spi*"],
+    "size_mb": 16,
+    "interface": "SPIx1",
+    "verified_on_hardware": false
+  },
+  "roles": {
+    "clock":   { "ports": ["CLK100MHZ"], "dir": "in", "note": "100 MHz oscillator." },
+    "led":     { "ports": ["LED[*]"], "dir": "out", "active_low": false, "note": "16 LEDs LD0-LD15." },
+    "rgb":     { "ports": ["LED16_R", "LED16_G", "LED16_B", "LED17_R", "LED17_G", "LED17_B"], "dir": "out", "active_low": false, "note": "Two RGB LEDs, 1 lights a colour. Very bright: use PWM." },
+    "switch":  { "ports": ["SW[*]"], "dir": "in", "active_low": false, "note": "16 slide switches, 1 = up. SW8/SW9 are LVCMOS18 (bank 34)." },
+    "button":  { "ports": ["BTNC", "BTNU", "BTNL", "BTNR", "BTND"], "dir": "in", "active_low": false, "note": "Centre, up, left, right, down. Read 1 when pressed. Debounce." },
+    "reset":   { "ports": ["CPU_RESETN"], "dir": "in", "active_low": true, "note": "Red CPU RESET button, reads 0 when pressed." },
+    "seg":     { "ports": ["CA", "CB", "CC", "CD", "CE", "CF", "CG"], "dir": "out", "active_low": true, "note": "Cathodes A..G (seg[0]=A ... seg[6]=G), shared by all digits. 0 lights a segment." },
+    "dp":      { "ports": ["DP"], "dir": "out", "active_low": true, "note": "Decimal point cathode, 0 lights it." },
+    "digit":   { "ports": ["AN[*]"], "dir": "out", "active_low": true, "note": "8 digit enables (AN[0] = rightmost), 0 enables. Multiplex at about 1 kHz per digit." },
+    "uart_tx": { "ports": ["UART_RXD_OUT"], "dir": "out", "note": "FPGA transmit -> USB-UART bridge -> PC. Idle high." },
+    "uart_rx": { "ports": ["UART_TXD_IN"], "dir": "in", "note": "PC -> USB-UART bridge -> FPGA receive. Asynchronous: synchronise." },
+    "pmod_ja": { "ports": ["JA[*]"], "dir": "inout" },
+    "pmod_jb": { "ports": ["JB[*]"], "dir": "inout" },
+    "pmod_jc": { "ports": ["JC[*]"], "dir": "inout" },
+    "pmod_jd": { "ports": ["JD[*]"], "dir": "inout" },
+    "vga":     { "ports": ["VGA_R[*]", "VGA_G[*]", "VGA_B[*]", "VGA_HS", "VGA_VS"], "dir": "out", "note": "12-bit VGA. 640x480@60 needs a 25 MHz pixel enable (100 MHz / 4)." }
+  },
+  "notes": [
+    "Also works for the Nexys 4 DDR (same pinout).",
+    "Accelerometer, temperature sensor, microphone, audio PWM, PS/2, SD card and Ethernet pins are in master.xdc."
+  ]
+}

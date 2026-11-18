@@ -1,0 +1,38 @@
+{
+  "schema": 1,
+  "name": "Digilent Arty A7-35T",
+  "vendor": "Digilent",
+  "part": "xc7a35ticsg324-1L",
+  "master_xdc": "master.xdc",
+  "master_xdc_source": "https://github.com/Digilent/digilent-xdc/blob/master/Arty-A7-35-Master.xdc",
+  "reference_manual": "https://digilent.com/reference/programmable-logic/arty-a7/reference-manual",
+  "clock": { "port": "CLK100MHZ", "freq_hz": 100000000 },
+  "xdc_config": [
+    "set_property CFGBVS VCCO [current_design]",
+    "set_property CONFIG_VOLTAGE 3.3 [current_design]"
+  ],
+  "flash": {
+    "parts": ["s25fl128sxxxxxx0-spi-x1_x2_x4", "mt25ql128-spi-x1_x2_x4", "n25q128-3.3v-spi-x1_x2_x4", "s25fl128*spi*", "mt25ql128*spi*"],
+    "size_mb": 16,
+    "interface": "SPIx1",
+    "verified_on_hardware": false
+  },
+  "roles": {
+    "clock":   { "ports": ["CLK100MHZ"], "dir": "in", "note": "100 MHz oscillator." },
+    "led":     { "ports": ["led[*]"], "dir": "out", "active_low": false, "note": "Green LEDs LD4-LD7 (led[0] = LD4)." },
+    "rgb":     { "ports": ["led0_r", "led0_g", "led0_b", "led1_r", "led1_g", "led1_b", "led2_r", "led2_g", "led2_b", "led3_r", "led3_g", "led3_b"], "dir": "out", "active_low": false, "note": "Four RGB LEDs LD0-LD3, 1 lights a colour. Very bright: use PWM." },
+    "switch":  { "ports": ["sw[*]"], "dir": "in", "active_low": false, "note": "4 slide switches, 1 = up." },
+    "button":  { "ports": ["btn[*]"], "dir": "in", "active_low": false, "note": "BTN0-BTN3, read 1 when pressed. Debounce." },
+    "reset":   { "ports": ["ck_rst"], "dir": "in", "active_low": true, "note": "Red RESET button, reads 0 when pressed." },
+    "uart_tx": { "ports": ["uart_rxd_out"], "dir": "out", "note": "FPGA transmit -> USB-UART bridge -> PC. Idle high." },
+    "uart_rx": { "ports": ["uart_txd_in"], "dir": "in", "note": "PC -> USB-UART bridge -> FPGA receive. Asynchronous: synchronise." },
+    "pmod_ja": { "ports": ["ja[*]"], "dir": "inout" },
+    "pmod_jb": { "ports": ["jb[*]"], "dir": "inout" },
+    "pmod_jc": { "ports": ["jc[*]"], "dir": "inout" },
+    "pmod_jd": { "ports": ["jd[*]"], "dir": "inout" }
+  },
+  "notes": [
+    "The part is the -1L (low-power, industrial) grade: xc7a35ticsg324-1L.",
+    "Arduino/chipKIT shield pins (ck_io*, ck_a*), Ethernet and DDR3 are in master.xdc. DDR3 needs the MIG IP."
+  ]
+}
