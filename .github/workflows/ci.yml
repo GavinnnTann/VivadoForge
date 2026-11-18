@@ -1,0 +1,32 @@
+# Keeps the template honest: unit tests, every lib/ testbench, and every template generated for
+# every compatible board and simulated. Uses Icarus Verilog because Vivado cannot run on
+# GitHub-hosted runners; run `python scripts/forge.py selftest` locally for xsim and builds.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  selftest:
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        python: ["3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install Icarus Verilog
+        run: sudo apt-get update && sudo apt-get install -y iverilog
+      - name: Unit tests
+        run: python -m unittest discover -s tests -v
+      - name: Check the shipped project
+        run: python scripts/forge.py check
+      - name: Self-test (lib modules + all templates on all boards)
+        run: python scripts/forge.py selftest --simulator iverilog
