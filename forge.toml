@@ -1,0 +1,20 @@
+# VivadoForge project configuration: the one file you edit.
+# Paths are relative to this file. Check it with: python scripts/forge.py check
+# Created from template "blink". Reference: docs/configuration.md
+
+[project]
+name = "blink"                        # Vivado project name (letters, digits, _ and -)
+top = "blink"                         # top-level module: its ports are the FPGA pins
+board = "cmod_a7"                     # a folder in boards/ (list: python scripts/forge.py boards)
+sources = ["src/**/*.v", "src/**/*.sv", "src/**/*.vhd", "src/**/*.mem"]
+lib = []                              # tested modules from lib/ (list: python scripts/forge.py lib)
+constraints = ["constraints/*.xdc"]
+
+[sim]
+tests = ["tb/*_tb.v", "tb/*_tb.sv"]   # one testbench per file; module name = file name
+timeout = 300                         # seconds per test before it is killed
+
+[build]
+dir = "build"                         # per-machine override: build_dir in forge.local.toml
+jobs = 4                              # parallel Vivado jobs
+timing = "error"                      # "error": failed timing fails the build; "warn": report only
