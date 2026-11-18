@@ -1,82 +1,51 @@
-# Template Architecture
-
-## How it works
+# Architecture
 
 ```
-config.tcl
-  BOARD = "cmod_a7"
-  PROJECT_NAME, TOP_MODULE, SOURCE_FILES, CONSTRAINT_FILES, BUILD_DIR
+ person / AI agent / VS Code task / forge_gui.py
+                 |
+                 v
+     scripts/forge.py  (Python 3.11+, standard library only)
+       |-- forge.toml + forge.local.toml ----> config.py
+       |-- boards/<id>/board.json + master.xdc -> boards.py, xdc.py
+       |-- check: hdl.py (ports) + xdc.py (pins) + checks.py
+       |-- sim:   sim.py -> xvlog/xelab/xsim  or  iverilog/vvp
+       |-- build/program/flash/devices:
+       |      build.py writes <build>/forge_context.tcl
+       |      vivado -mode batch -source forge.tcl -tclargs --forge <action> forge_context.tcl
+       |      reports.py turns logs and .rpt files into reports/summary.json
+       '-- new/pins: templates.py (RTL from templates/, pins from the board master)
 
-build.ps1  (dispatcher)
-  |-- build.tcl     --> reads config.tcl + boards/<BOARD>/board.tcl
-  |-- program.tcl   --> reads config.tcl
-  |-- flash.tcl     --> reads config.tcl + boards/<BOARD>/board.tcl
-  `-- simulate.tcl  --> hardcoded to reaction_game_tb (edit as needed)
+     scripts/forge.tcl  (Vivado side)
+       forge::make_project, forge::build, forge::program, forge::flash, forge::devices,
+       forge::open_routed, forge::worst_paths
+       usable in batch mode (above) and in any interactive / MCP Vivado session
 ```
 
-## Directory layout
+## Design decisions
 
-```
-.
-├── boards/                   # Board definitions
-│   ├── cmod_a7/
-│   │   ├── board.tcl         # FPGA part, clock, flash params
-│   │   └── constraints.xdc   # Full board pin reference
-│   ├── basys3/
-│   ├── arty_a7_35t/
-│   └── nexys_a7_100t/
-├── constraints/              # Project-specific pin constraints
-│   ├── DSL_Starter_Kit.xdc   # CMOD A7 + DSL expansion board
-│   ├── CMODA7_Constrain.xdc  # CMOD A7 bare board
-│   └── recorder.xdc          # Active project constraints
-├── scripts/
-│   ├── setup.py              # Setup GUI
-│   ├── config.tcl            # Project configuration (edit this)
-│   ├── build.tcl             # Vivado: create project, synth, impl, bitstream
-│   ├── program.tcl           # Vivado: JTAG programming (volatile)
-│   ├── flash.tcl             # Vivado: configuration flash (non-volatile)
-│   ├── simulate.tcl          # Vivado: behavioral simulation
-│   └── build.ps1             # PowerShell dispatcher
-├── src/                      # Public template examples (git-tracked)
-├── src_main/                 # Personal projects (git-ignored)
-├── testbench/                # Simulation testbenches
-├── docs/                     # Extended documentation
-└── .vscode/
-    ├── tasks.json            # VS Code build tasks
-    ├── settings.json         # File associations and linting
-    └── extensions.json       # Recommended extensions
-```
+- **One entry point.** `forge.py` is the contract for people, VS Code tasks, the GUI, CI and AI
+  agents. MCP servers are optional extras for interactive inspection, not a dependency. If an
+  MCP server disappears, nothing breaks.
+- **Settings flow one way.** `forge.toml` and `board.json` are the sources of truth. Vivado
+  only ever sees the generated `forge_context.tcl`, so there is nothing to keep in sync by hand.
+- **Vivado project mode, regenerated every build.** Each build recreates the `.xpr` from
+  `forge.toml`, so the project in git is just text files and the build folder is disposable.
+  Project mode keeps Vivado's standard reports and lets you open the result in the GUI.
+- **Arguments through files.** Vivado's `.bat` wrappers pass arguments through `cmd.exe`,
+  which splits `NAME=VALUE` and mangles quotes and spaces. forge passes simulator options in
+  `-f` option files and runs Vivado with relative arguments from inside the build folder.
+- **Verdicts from output, not exit codes.** xsim exits 0 after `$fatal`, so a test passes only
+  on `TEST PASSED` with no error lines.
+- **Safety by construction.** The build folder carries a marker and forge refuses to write to
+  or delete folders without it. `program`/`flash` need a real terminal confirmation or `--yes`.
+  `check` rejects pins that are not on the board.
 
-## Configuration loading order
+## Tests
 
-1. `build.ps1` calls Vivado in batch mode with a Tcl script
-2. Tcl script sources `scripts/config.tcl` — sets user variables
-3. Tcl script sources `boards/$BOARD/board.tcl` — sets hardware variables
-4. Build proceeds using the combined variable set
-
-Board variables (`PART_NAME`, `CFGMEM_*`) override nothing in config.tcl — they are in separate namespaces. Both files use `set`, so the board file must be sourced after config to have effect.
-
-## Private vs public files
-
-- `src/` — template examples, committed to git
-- `src_main/` — git-ignored; all personal project Verilog goes here
-- The build system reads from `src_main/` by default (set in `build.tcl`)
-
-To build a template example from `src/` temporarily:
-In `build.tcl` line 2, change `src_main` to `src`.
-
-## Build output
-
-Vivado writes all generated files to `BUILD_DIR` (default: `C:/fpga_build`).
-This path is outside OneDrive by design to avoid file-locking issues during synthesis.
-
-The build directory is never committed to git.
-
-## Extending the template
-
-| Goal | What to change |
-|------|----------------|
-| New board | Add `boards/<name>/board.tcl` and `constraints.xdc` |
-| New synthesis strategy | Edit `SYNTH_STRATEGY` in `config.tcl` |
-| Config-driven simulation | Edit `simulate.tcl` to read `TOP_MODULE` from config |
-| Extra build steps | Append Tcl commands to `build.tcl` after `wait_on_run impl_1` |
+| Layer | Test |
+|---|---|
+| Python tooling | `tests/test_forge.py` (unittest; parsers, config, checks, generation) |
+| RTL library | `lib/<module>/<module>_tb.v`, self-checking, on xsim and Icarus |
+| Templates x boards | `forge.py selftest` generates every template for every compatible board, checks and simulates it |
+| Vivado flow | `forge.py build` on real designs (manual: needs Vivado) |
+| CI | `.github/workflows/ci.yml` runs unit tests and `selftest --simulator iverilog` on Ubuntu |
