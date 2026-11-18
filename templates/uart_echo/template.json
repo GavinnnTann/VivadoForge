@@ -1,0 +1,17 @@
+{
+  "name": "uart_echo",
+  "description": "Echoes every byte received on the USB-UART at 115200 baud and shows the last byte on the LEDs. Uses lib/uart_rx, lib/fifo_sync and lib/uart_tx.",
+  "top": "uart_echo",
+  "lib": ["uart_rx", "fifo_sync", "uart_tx"],
+  "params": {
+    "CLK_HZ": "clock_hz",
+    "N_LED": "count:led|max:8",
+    "LED_ACTIVE_LOW": "active_low:led"
+  },
+  "ports": {
+    "clk": { "role": "clock" },
+    "uart_rx": { "role": "uart_rx" },
+    "uart_tx": { "role": "uart_tx" },
+    "led": { "role": "led", "width": "N_LED" }
+  }
+}

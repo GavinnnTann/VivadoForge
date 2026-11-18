@@ -1,0 +1,17 @@
+{
+  "name": "button_counter",
+  "description": "Each press of a button adds one to a counter shown on the LEDs. Shows how to synchronise and debounce a mechanical button (lib/debounce).",
+  "top": "button_counter",
+  "lib": ["debounce"],
+  "params": {
+    "CLK_HZ": "clock_hz",
+    "N_LED": "count:led|max:8",
+    "LED_ACTIVE_LOW": "active_low:led",
+    "BTN_ACTIVE_LOW": "active_low:button"
+  },
+  "ports": {
+    "clk": { "role": "clock" },
+    "btn": { "role": "button" },
+    "led": { "role": "led", "width": "N_LED" }
+  }
+}
