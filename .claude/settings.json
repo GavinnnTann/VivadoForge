@@ -1,0 +1,36 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python scripts/forge.py info:*)",
+      "Bash(python scripts/forge.py check:*)",
+      "Bash(python scripts/forge.py sim:*)",
+      "Bash(python scripts/forge.py build:*)",
+      "Bash(python scripts/forge.py report:*)",
+      "Bash(python scripts/forge.py boards:*)",
+      "Bash(python scripts/forge.py board:*)",
+      "Bash(python scripts/forge.py pins:*)",
+      "Bash(python scripts/forge.py lib:*)",
+      "Bash(python scripts/forge.py templates:*)",
+      "Bash(python scripts/forge.py devices:*)",
+      "Bash(python3 scripts/forge.py info:*)",
+      "Bash(python3 scripts/forge.py check:*)",
+      "Bash(python3 scripts/forge.py sim:*)",
+      "Bash(python3 scripts/forge.py build:*)",
+      "Bash(python3 scripts/forge.py report:*)",
+      "Bash(python3 scripts/forge.py boards:*)",
+      "Bash(python3 scripts/forge.py board:*)",
+      "Bash(python3 scripts/forge.py pins:*)",
+      "Bash(python3 scripts/forge.py lib:*)",
+      "Bash(python3 scripts/forge.py templates:*)",
+      "Bash(python3 scripts/forge.py devices:*)"
+    ],
+    "ask": [
+      "Bash(python scripts/forge.py program:*)",
+      "Bash(python scripts/forge.py flash:*)",
+      "Bash(python3 scripts/forge.py program:*)",
+      "Bash(python3 scripts/forge.py flash:*)",
+      "Edit(boards/**)",
+      "Write(boards/**)"
+    ]
+  }
+}
