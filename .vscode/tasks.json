@@ -1,134 +1,410 @@
+// VivadoForge tasks: Ctrl+Shift+B builds; 'Tasks: Run Test Task' simulates.
+// Errors from forge, Vivado and the simulators appear in the Problems panel (Ctrl+Shift+M).
+// Program and Flash ask for confirmation in the terminal before touching the board.
 {
     "version": "2.0.0",
     "tasks": [
         {
-            "label": "Build FPGA Design",
+            "label": "FPGA: Build (synthesis + implementation + bitstream)",
             "type": "shell",
-            "command": "powershell",
+            "command": "python",
+            "linux": {
+                "command": "python3"
+            },
+            "osx": {
+                "command": "python3"
+            },
             "args": [
-                "-ExecutionPolicy",
-                "Bypass",
-                "-File",
-                "${workspaceFolder}\\scripts\\build.ps1",
-                "-Action",
+                "scripts/forge.py",
                 "build"
+            ],
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated",
+                "clear": true
+            },
+            "problemMatcher": [
+                {
+                    "owner": "forge",
+                    "source": "forge",
+                    "fileLocation": [
+                        "autoDetect",
+                        "${workspaceFolder}"
+                    ],
+                    "severity": "error",
+                    "pattern": {
+                        "regexp": "^\\s*(?:ERROR|CRITICAL)\\s+\\[([^\\]]+)\\]\\s+(.*?)\\s+-->\\s+(.+?):(\\d+)\\s*$",
+                        "message": 2,
+                        "file": 3,
+                        "line": 4,
+                        "code": 1
+                    }
+                },
+                {
+                    "owner": "forge",
+                    "source": "forge",
+                    "fileLocation": [
+                        "autoDetect",
+                        "${workspaceFolder}"
+                    ],
+                    "severity": "warning",
+                    "pattern": {
+                        "regexp": "^\\s*WARN\\s+\\[([^\\]]+)\\]\\s+(.*?)\\s+-->\\s+(.+?):(\\d+)\\s*$",
+                        "message": 2,
+                        "file": 3,
+                        "line": 4,
+                        "code": 1
+                    }
+                },
+                {
+                    "owner": "forge",
+                    "source": "forge",
+                    "fileLocation": [
+                        "autoDetect",
+                        "${workspaceFolder}"
+                    ],
+                    "severity": "error",
+                    "pattern": {
+                        "regexp": "^\\s*ERROR:\\s*\\[([^\\]]+)\\]\\s*(.*?)\\s*\\[([^\\[\\]]+):(\\d+)\\]\\s*$",
+                        "message": 2,
+                        "file": 3,
+                        "line": 4,
+                        "code": 1
+                    }
+                },
+                {
+                    "owner": "forge",
+                    "source": "forge",
+                    "fileLocation": [
+                        "autoDetect",
+                        "${workspaceFolder}"
+                    ],
+                    "severity": "warning",
+                    "pattern": {
+                        "regexp": "^\\s*CRITICAL WARNING:\\s*\\[([^\\]]+)\\]\\s*(.*?)\\s*\\[([^\\[\\]]+):(\\d+)\\]\\s*$",
+                        "message": 2,
+                        "file": 3,
+                        "line": 4,
+                        "code": 1
+                    }
+                }
             ],
             "group": {
                 "kind": "build",
                 "isDefault": true
-            },
-            "presentation": {
-                "reveal": "always",
-                "panel": "new"
-            },
-            "problemMatcher": []
+            }
         },
         {
-            "label": "Program FPGA",
-            "type": "shell",
-            "command": "powershell",
-            "args": [
-                "-ExecutionPolicy",
-                "Bypass",
-                "-File",
-                "${workspaceFolder}\\scripts\\build.ps1",
-                "-Action",
-                "program"
-            ],
-            "group": "none",
-            "presentation": {
-                "reveal": "always",
-                "panel": "new"
-            },
-            "problemMatcher": []
-        },
-        {
-            "label": "Build and Program FPGA",
-            "type": "shell",
-            "command": "powershell",
-            "args": [
-                "-ExecutionPolicy",
-                "Bypass",
-                "-File",
-                "${workspaceFolder}\\scripts\\build.ps1",
-                "-Action",
-                "all"
-            ],
-            "group": "none",
-            "presentation": {
-                "reveal": "always",
-                "panel": "new"
-            },
-            "problemMatcher": []
-        },
-        {
-            "label": "Flash FPGA (Non-Volatile)",
-            "type": "shell",
-            "command": "powershell",
-            "args": [
-                "-ExecutionPolicy",
-                "Bypass",
-                "-File",
-                "${workspaceFolder}\\scripts\\build.ps1",
-                "-Action",
-                "flash"
-            ],
-            "group": "none",
-            "presentation": {
-                "reveal": "always",
-                "panel": "new"
-            },
-            "problemMatcher": []
-        },
-        {
-            "label": "Build and Flash FPGA",
-            "type": "shell",
-            "command": "powershell",
-            "args": [
-                "-ExecutionPolicy",
-                "Bypass",
-                "-File",
-                "${workspaceFolder}\\scripts\\build.ps1",
-                "-Action",
-                "allflash"
-            ],
-            "group": "none",
-            "presentation": {
-                "reveal": "always",
-                "panel": "new"
-            },
-            "problemMatcher": []
-        },
-        {
-            "label": "Configure Project (Setup GUI)",
+            "label": "FPGA: Simulate (all testbenches)",
             "type": "shell",
             "command": "python",
+            "linux": {
+                "command": "python3"
+            },
+            "osx": {
+                "command": "python3"
+            },
             "args": [
-                "${workspaceFolder}\\scripts\\setup.py"
+                "scripts/forge.py",
+                "sim"
             ],
-            "group": "none",
             "presentation": {
-                "reveal": "silent",
-                "panel": "shared"
+                "reveal": "always",
+                "panel": "dedicated",
+                "clear": true
+            },
+            "problemMatcher": [
+                {
+                    "owner": "forge",
+                    "source": "forge",
+                    "fileLocation": [
+                        "autoDetect",
+                        "${workspaceFolder}"
+                    ],
+                    "severity": "error",
+                    "pattern": {
+                        "regexp": "^\\s*ERROR:\\s*\\[([^\\]]+)\\]\\s*(.*?)\\s*\\[([^\\[\\]]+):(\\d+)\\]\\s*$",
+                        "message": 2,
+                        "file": 3,
+                        "line": 4,
+                        "code": 1
+                    }
+                },
+                {
+                    "owner": "forge",
+                    "source": "forge",
+                    "fileLocation": [
+                        "autoDetect",
+                        "${workspaceFolder}"
+                    ],
+                    "severity": "error",
+                    "pattern": {
+                        "regexp": "^\\s*(.+?\\.s?v):(\\d+):\\s*((?:syntax error|error).*)$",
+                        "message": 3,
+                        "file": 1,
+                        "line": 2
+                    }
+                }
+            ],
+            "group": {
+                "kind": "test",
+                "isDefault": true
+            }
+        },
+        {
+            "label": "FPGA: Simulate and open waveforms",
+            "type": "shell",
+            "command": "python",
+            "linux": {
+                "command": "python3"
+            },
+            "osx": {
+                "command": "python3"
+            },
+            "args": [
+                "scripts/forge.py",
+                "sim",
+                "--gui"
+            ],
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated",
+                "clear": true
+            },
+            "problemMatcher": [
+                {
+                    "owner": "forge",
+                    "source": "forge",
+                    "fileLocation": [
+                        "autoDetect",
+                        "${workspaceFolder}"
+                    ],
+                    "severity": "error",
+                    "pattern": {
+                        "regexp": "^\\s*ERROR:\\s*\\[([^\\]]+)\\]\\s*(.*?)\\s*\\[([^\\[\\]]+):(\\d+)\\]\\s*$",
+                        "message": 2,
+                        "file": 3,
+                        "line": 4,
+                        "code": 1
+                    }
+                },
+                {
+                    "owner": "forge",
+                    "source": "forge",
+                    "fileLocation": [
+                        "autoDetect",
+                        "${workspaceFolder}"
+                    ],
+                    "severity": "error",
+                    "pattern": {
+                        "regexp": "^\\s*(.+?\\.s?v):(\\d+):\\s*((?:syntax error|error).*)$",
+                        "message": 3,
+                        "file": 1,
+                        "line": 2
+                    }
+                }
+            ],
+            "group": "test"
+        },
+        {
+            "label": "FPGA: Check (pins, clock, config)",
+            "type": "shell",
+            "command": "python",
+            "linux": {
+                "command": "python3"
+            },
+            "osx": {
+                "command": "python3"
+            },
+            "args": [
+                "scripts/forge.py",
+                "check"
+            ],
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated",
+                "clear": true
+            },
+            "problemMatcher": [
+                {
+                    "owner": "forge",
+                    "source": "forge",
+                    "fileLocation": [
+                        "autoDetect",
+                        "${workspaceFolder}"
+                    ],
+                    "severity": "error",
+                    "pattern": {
+                        "regexp": "^\\s*(?:ERROR|CRITICAL)\\s+\\[([^\\]]+)\\]\\s+(.*?)\\s+-->\\s+(.+?):(\\d+)\\s*$",
+                        "message": 2,
+                        "file": 3,
+                        "line": 4,
+                        "code": 1
+                    }
+                },
+                {
+                    "owner": "forge",
+                    "source": "forge",
+                    "fileLocation": [
+                        "autoDetect",
+                        "${workspaceFolder}"
+                    ],
+                    "severity": "warning",
+                    "pattern": {
+                        "regexp": "^\\s*WARN\\s+\\[([^\\]]+)\\]\\s+(.*?)\\s+-->\\s+(.+?):(\\d+)\\s*$",
+                        "message": 2,
+                        "file": 3,
+                        "line": 4,
+                        "code": 1
+                    }
+                }
+            ]
+        },
+        {
+            "label": "FPGA: Program (volatile)",
+            "type": "shell",
+            "command": "python",
+            "linux": {
+                "command": "python3"
+            },
+            "osx": {
+                "command": "python3"
+            },
+            "args": [
+                "scripts/forge.py",
+                "program"
+            ],
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated",
+                "clear": true,
+                "focus": true
             },
             "problemMatcher": []
         },
         {
-            "label": "Clean Build",
+            "label": "FPGA: Flash (non-volatile)",
             "type": "shell",
-            "command": "powershell",
+            "command": "python",
+            "linux": {
+                "command": "python3"
+            },
+            "osx": {
+                "command": "python3"
+            },
             "args": [
-                "-ExecutionPolicy",
-                "Bypass",
-                "-File",
-                "${workspaceFolder}\\scripts\\build.ps1",
-                "-Action",
-                "clean"
+                "scripts/forge.py",
+                "flash"
             ],
-            "group": "none",
             "presentation": {
                 "reveal": "always",
-                "panel": "new"
+                "panel": "dedicated",
+                "clear": true,
+                "focus": true
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "FPGA: Show last build report",
+            "type": "shell",
+            "command": "python",
+            "linux": {
+                "command": "python3"
+            },
+            "osx": {
+                "command": "python3"
+            },
+            "args": [
+                "scripts/forge.py",
+                "report"
+            ],
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated",
+                "clear": true
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "FPGA: List connected boards",
+            "type": "shell",
+            "command": "python",
+            "linux": {
+                "command": "python3"
+            },
+            "osx": {
+                "command": "python3"
+            },
+            "args": [
+                "scripts/forge.py",
+                "devices"
+            ],
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated",
+                "clear": true
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "FPGA: Open project in Vivado",
+            "type": "shell",
+            "command": "python",
+            "linux": {
+                "command": "python3"
+            },
+            "osx": {
+                "command": "python3"
+            },
+            "args": [
+                "scripts/forge.py",
+                "open"
+            ],
+            "presentation": {
+                "reveal": "silent",
+                "panel": "dedicated",
+                "clear": true
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "FPGA: Setup GUI",
+            "type": "shell",
+            "command": "python",
+            "linux": {
+                "command": "python3"
+            },
+            "osx": {
+                "command": "python3"
+            },
+            "args": [
+                "scripts/forge_gui.py"
+            ],
+            "presentation": {
+                "reveal": "silent",
+                "panel": "dedicated",
+                "clear": true
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "FPGA: Clean build folder",
+            "type": "shell",
+            "command": "python",
+            "linux": {
+                "command": "python3"
+            },
+            "osx": {
+                "command": "python3"
+            },
+            "args": [
+                "scripts/forge.py",
+                "clean"
+            ],
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated",
+                "clear": true
             },
             "problemMatcher": []
         }

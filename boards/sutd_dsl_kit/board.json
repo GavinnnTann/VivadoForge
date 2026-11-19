@@ -1,0 +1,40 @@
+{
+  "schema": 1,
+  "name": "SUTD DSL Starter Kit (Cmod A7-35T)",
+  "vendor": "SUTD / Digilent",
+  "part": "xc7a35tcpg236-1",
+  "master_xdc": "master.xdc",
+  "master_xdc_source": "SUTD 30.110 Digital Systems Lab kit pin map, derived from Digilent's Cmod-A7-Master.xdc",
+  "reference_manual": "https://digilent.com/reference/programmable-logic/cmod-a7/reference-manual",
+  "clock": { "port": "clk", "freq_hz": 12000000 },
+  "xdc_config": [
+    "set_property CFGBVS VCCO [current_design]",
+    "set_property CONFIG_VOLTAGE 3.3 [current_design]"
+  ],
+  "flash": {
+    "parts": ["mx25l3273f-spi-x1_x2_x4", "s25fl032p-spi-x1_x2_x4", "mx25l3273f*spi*"],
+    "size_mb": 4,
+    "interface": "SPIx1",
+    "verified_on_hardware": true
+  },
+  "roles": {
+    "clock":   { "ports": ["clk"], "dir": "in", "note": "12 MHz oscillator on the Cmod A7." },
+    "led":     { "ports": ["led[*]"], "dir": "out", "active_low": false, "note": "10 kit LEDs." },
+    "switch":  { "ports": ["sw[*]"], "dir": "in", "active_low": false, "note": "10 kit slide switches." },
+    "button":  { "ports": ["btn[0]", "btn[1]"], "dir": "in", "active_low": false, "note": "Cmod A7 on-board BTN0-BTN1, read 1 when pressed. Debounce." },
+    "key":     { "ports": ["key[0]", "key[1]"], "dir": "in", "note": "Kit push keys. Polarity not confirmed: check with a test design before relying on it. Debounce." },
+    "seg":     { "ports": ["seg[*]"], "dir": "out", "active_low": false, "note": "Common-cathode display: segments active-high, seg[0]=A ... seg[6]=G." },
+    "dp":      { "ports": ["dp"], "dir": "out", "active_low": false, "note": "Decimal point, active-high." },
+    "digit":   { "ports": ["hex[*]"], "dir": "out", "active_low": true, "note": "6 digit selects (hex[0] = rightmost), 0 enables. Multiplex at about 1 kHz per digit." },
+    "rgb":     { "ports": ["led0_r", "led0_g", "led0_b"], "dir": "out", "active_low": true, "note": "Cmod A7 RGB LED, 0 lights a colour." },
+    "cmod_led":{ "ports": ["cled[0]", "cled[1]"], "dir": "out", "active_low": false, "note": "Cmod A7 green LEDs." },
+    "adc":     { "ports": ["adc_din", "adc_csn", "adc_clk", "adc_dout"], "dir": "inout", "note": "MCP3202 12-bit SPI ADC on Pmod JA." },
+    "uart_tx": { "ports": ["uart_rxd_out"], "dir": "out", "note": "FPGA transmit -> USB-UART bridge -> PC. Idle high." },
+    "uart_rx": { "ports": ["uart_txd_in"], "dir": "in", "note": "PC -> USB-UART bridge -> FPGA receive. Asynchronous: synchronise." },
+    "gpio":    { "ports": ["pio*"], "dir": "inout", "note": "DIP header pins not used by the kit." }
+  },
+  "notes": [
+    "Polarities come from the SUTD course materials. Key polarity is unconfirmed.",
+    "The kit uses most of the Cmod A7 DIP pins; only the pio* ports listed in master.xdc are free."
+  ]
+}

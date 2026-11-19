@@ -2,14 +2,24 @@
     "files.associations": {
         "*.v": "verilog",
         "*.vh": "verilog",
+        "*.sv": "systemverilog",
+        "*.svh": "systemverilog",
         "*.xdc": "tcl"
     },
     "files.exclude": {
-        "**/build": true,
         "**/.Xil": true,
-        "**/*.jou": true,
-        "**/*.log": true
+        "**/__pycache__": true
+    },
+    "search.exclude": {
+        "build/**": true,
+        "boards/*/master.xdc": false
+    },
+    "files.watcherExclude": {
+        "build/**": true
     },
     "verilog.linting.linter": "none",
-    "verilog.formatting.verilogHDL.formatter": "verilog-format"
+    "editor.rulers": [100],
+    "[verilog]": { "editor.tabSize": 4, "editor.insertSpaces": true },
+    "[systemverilog]": { "editor.tabSize": 4, "editor.insertSpaces": true },
+    "python.analysis.extraPaths": ["scripts"]
 }

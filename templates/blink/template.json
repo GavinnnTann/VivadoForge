@@ -1,0 +1,15 @@
+{
+  "name": "blink",
+  "description": "Binary counter on the LEDs; LED 0 blinks at 1 Hz. The smallest complete design: clock in, counter, LEDs out.",
+  "top": "blink",
+  "lib": [],
+  "params": {
+    "CLK_HZ": "clock_hz",
+    "N_LED": "count:led|max:8",
+    "LED_ACTIVE_LOW": "active_low:led"
+  },
+  "ports": {
+    "clk": { "role": "clock" },
+    "led": { "role": "led", "width": "N_LED" }
+  }
+}

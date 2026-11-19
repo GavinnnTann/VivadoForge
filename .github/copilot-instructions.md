@@ -1,25 +1,11 @@
-# Verilog FPGA Development with Vivado ML Edition
+# Copilot instructions
 
-## Project Context
-This is a Verilog hardware development project targeting the CMOD A7 FPGA board using Xilinx Vivado ML Edition.
+Follow `AGENTS.md` at the repository root: it holds this project's rules, commands and
+conventions. The most important ones:
 
-## Coding Guidelines
-- Follow Verilog-2001 standard
-- Use meaningful signal and module names
-- Include clear comments for complex logic
-- Keep modules focused and reusable
-- Use non-blocking assignments (<=) for sequential logic
-- Use blocking assignments (=) for combinational logic
+- Use `python scripts/forge.py info --json` and `board --json` before changing anything.
+- Never type FPGA pin numbers; use `python scripts/forge.py pins add <board port>=<name>`.
+- Work in the order `check`, `sim`, `build`, and report what was actually verified.
+- Never run `forge.py program` or `forge.py flash` without the user's explicit approval.
 
-## Project Structure
-- `src/`: Verilog source files (.v)
-- `constraints/`: XDC constraint files for pin mapping
-- `testbench/`: Simulation and testbench files
-- `scripts/`: TCL scripts for Vivado automation
-- `build/`: Generated build artifacts (git-ignored)
-
-## Development Workflow
-1. Write Verilog in `src/`
-2. Define pin constraints in `constraints/`
-3. Run synthesis, implementation, and bitstream generation using build script
-4. Program CMOD A7 board via USB-JTAG
+Step-by-step procedures are in `.claude/skills/*/SKILL.md`.
