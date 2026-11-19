@@ -5,6 +5,9 @@ Run:  python -m unittest discover -s tests      (or: python scripts/forge.py sel
 
 from __future__ import annotations
 
+import contextlib
+import io
+import json
 import shutil
 import sys
 import tempfile
@@ -13,11 +16,14 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
+from forgelib import build as B  # noqa: E402
 from forgelib import hdl, reports, xdc  # noqa: E402
+from forgelib import manifest as M  # noqa: E402
 from forgelib.boards import board_ids, load_board, validate_board  # noqa: E402
 from forgelib.build import tcl_quote  # noqa: E402
 from forgelib.build_dir import clean_build_dir, ensure_build_dir  # noqa: E402
 from forgelib.checks import run_checks  # noqa: E402
+from forgelib.cli import main as forge_main  # noqa: E402
 from forgelib.common import ForgeError  # noqa: E402
 from forgelib.config import load_config  # noqa: E402
 from forgelib.sim import judge  # noqa: E402
@@ -163,6 +169,8 @@ Timing constraints are not met.
 """)
         self.assertEqual(u["lut"], {"used": 7, "available": 20800, "percent": 0.03})
         self.assertEqual(u["io"]["used"], 3)
+        tiny = reports.parse_utilization("| Slice LUTs                 |    2 |     0 |          0 |     20800 | <0.01 |\n")
+        self.assertEqual(tiny["lut"]["percent"], 0.01)
 
     def test_messages(self):
         msgs = reports.parse_messages(
@@ -293,6 +301,15 @@ class TestProjects(TempDir):
             load_config(self.tmp)
         self.assertIn("sources", str(ctx.exception))
 
+    def test_waivers_need_an_id_and_a_reason(self):
+        base = '[project]\nname = "x"\ntop = "t"\nboard = "cmod_a7"\n[build.waive]\n'
+        (self.tmp / "forge.toml").write_text(base + '"Common  17-55" = "reviewed: unused debug port"\n')
+        self.assertEqual(load_config(self.tmp).waivers, {"Common 17-55": "reviewed: unused debug port"})
+        for bad in ('"Common 17-55" = ""\n', '"not an id!" = "why"\n'):
+            (self.tmp / "forge.toml").write_text(base + bad)
+            with self.assertRaises(ForgeError):
+                load_config(self.tmp)
+
     def test_direction_and_polarity_follow_the_board(self):
         (self.tmp / "forge.toml").write_text('[project]\nname = "t"\ntop = "top"\nboard = "basys3"\n')
         (self.tmp / "src").mkdir()
@@ -309,6 +326,123 @@ class TestProjects(TempDir):
                                ("direction", "warning", "sw0"),      # inout on a switch
                                ("polarity", "warning", "go_n")})     # _n name on an active-high button
 
+
+def _forge_json(*argv: str) -> tuple[int, dict]:
+    """Run the CLI in --json mode and return (exit code, parsed stdout)."""
+    stdout, stderr = io.StringIO(), io.StringIO()
+    with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+        rc = forge_main(["--json", *argv])
+    return rc, json.loads(stdout.getvalue())
+
+
+class TestManifest(TempDir):
+    def setUp(self):
+        super().setUp()
+        new_project("blink", "cmod_a7", self.tmp, None, force=False)
+        self.cfg = load_config(self.tmp)
+        self.board = load_board("cmod_a7")
+        self.src = self.tmp / "src" / "blink.v"
+
+    def fake_build(self, content: bytes = b"bitstream") -> None:
+        """What a successful forge build leaves behind, without running Vivado."""
+        self.cfg.bitstream.parent.mkdir(parents=True, exist_ok=True)
+        self.cfg.bitstream.write_bytes(content)
+        M.write(self.cfg, M.collect_inputs(self.cfg, self.board), self.cfg.bitstream,
+                {"finished": "now", "status": "passed", "vivado": "test"})
+
+    def test_compare_lists_what_changed(self):
+        before = M.collect_inputs(self.cfg, self.board)
+        self.assertEqual(M.compare(before, M.collect_inputs(self.cfg, self.board)), [])
+        self.src.write_text(self.src.read_text() + "\n// edited\n")
+        (self.tmp / "src" / "extra.v").write_text("`timescale 1ns / 1ps\nmodule extra; endmodule\n")
+        self.cfg.generics = {"N_LED": "1"}
+        changes = M.compare(before, M.collect_inputs(self.cfg, self.board))
+        self.assertTrue(any(c.startswith("changed") and c.endswith("blink.v") for c in changes), changes)
+        self.assertTrue(any(c.startswith("added") and c.endswith("extra.v") for c in changes), changes)
+        self.assertTrue(any(c.startswith("setting generics") for c in changes), changes)
+
+    def test_program_refuses_a_stale_bitstream(self):
+        rc, res = _forge_json("-p", str(self.tmp), "program")
+        self.assertEqual((rc, res["code"]), (1, "no_build"))
+
+        self.fake_build()
+        rc, res = _forge_json("-p", str(self.tmp), "program")    # fresh: stops at Vivado or approval, never programs
+        self.assertEqual(rc, 1)
+        self.assertIn(res["code"], ("approval_required", "vivado_not_found"))
+
+        self.src.write_text(self.src.read_text() + "\n// edited after the build\n")
+        rc, res = _forge_json("-p", str(self.tmp), "program")
+        self.assertEqual((rc, res["code"]), (1, "stale_bitstream"))
+        self.assertTrue(any(c.endswith("blink.v") for c in res["changes"]), res)
+        rc, res = _forge_json("-p", str(self.tmp), "info")
+        self.assertIs(res["last_build"], None)                    # no summary.json in a fake build
+
+        self.fake_build()
+        self.cfg.bitstream.write_bytes(b"regenerated in the GUI")
+        rc, res = _forge_json("-p", str(self.tmp), "flash")
+        self.assertEqual((rc, res["code"]), (1, "stale_bitstream"))
+
+
+class TestVerdicts(unittest.TestCase):
+    @staticmethod
+    def summary(**changes) -> dict:
+        s = {"bitstream": "x.bit", "stage": "done", "reports": {"timing": "t.rpt", "drc": "d.rpt"},
+             "timing": {"met": True, "constrained": True, "wns": 1.0, "tns_failing": 0, "checks": {"no_clock": 0}},
+             "utilization": {"ff": {"used": 10}}, "drc": [], "critical_warnings": []}
+        s.update(changes)
+        return s
+
+    def verdict(self, waivers=None, **changes) -> dict:
+        return B.evaluate(self.summary(**changes), waivers)
+
+    def test_passed_needs_every_check(self):
+        s = self.verdict()
+        self.assertEqual(s["status"], "passed")
+        self.assertEqual(s["verification"], {"bitstream": "generated", "timing": "met", "drc": "passed",
+                                             "critical_warnings": "none", "hardware": "not_tested"})
+        self.assertTrue(B.build_ok(s))
+
+    def test_timing(self):
+        s = self.verdict(timing={"met": False, "constrained": True, "wns": -0.4, "tns_failing": 3, "checks": {}},
+                         critical_warnings=[{"id": "Timing 38-282", "text": "failed to meet timing"}])
+        self.assertEqual((s["status"], s["verification"]["timing"]), ("timing_failed", "failed"))
+        self.assertFalse(B.build_ok(s, "error"))
+        self.assertTrue(B.build_ok(s, "warn"))          # the timing critical warning is not counted twice
+
+        s = self.verdict(timing={"met": True, "constrained": True, "checks": {"no_clock": 8}})
+        self.assertEqual((s["status"], s["verification"]["timing"]), ("unverified", "incomplete"))
+
+        s = self.verdict(timing={"met": None, "constrained": False, "checks": {"no_clock": 0}},
+                         utilization={"ff": {"used": 0}})
+        self.assertEqual((s["status"], s["verification"]["timing"]), ("passed", "not_applicable"))
+
+        s = self.verdict(timing={"met": None, "constrained": False, "checks": {}}, utilization={"ff": {"used": 5}})
+        self.assertEqual((s["status"], s["verification"]["timing"]), ("unverified", "unconstrained"))
+
+    def test_missing_reports_are_not_a_pass(self):
+        s = self.verdict(reports={})
+        self.assertEqual(s["status"], "unverified")
+        self.assertEqual((s["verification"]["timing"], s["verification"]["drc"]), ("unknown", "unknown"))
+        self.assertFalse(B.build_ok(s, "warn"))         # not a timing problem: "warn" does not excuse it
+
+    def test_critical_warnings_and_waivers(self):
+        cw = [{"id": "Common 17-55", "text": "'set_property' expects at least one object."},
+              {"id": "Constraints 18-5210", "text": "No constraints selected for write.", "benign": "routine"}]
+        s = self.verdict(critical_warnings=cw)
+        self.assertEqual((s["status"], s["verification"]["critical_warnings"]), ("unverified", "present"))
+        self.assertFalse(B.build_ok(s, "warn"))
+        s = self.verdict({"Common 17-55": "reviewed"}, critical_warnings=cw)
+        self.assertEqual((s["status"], s["verification"]["critical_warnings"]), ("passed", "waived"))
+        self.assertEqual(s["critical_warnings"][0]["waived"], "reviewed")
+
+        drc = [{"rule": "PDCN-1569", "severity": "Critical Warning", "description": "x", "count": 1}]
+        self.assertEqual(self.verdict(drc=drc)["verification"]["drc"], "violations")
+        self.assertEqual(self.verdict({"DRC PDCN-1569": "ok"}, drc=drc)["status"], "passed")
+
+    def test_no_bitstream_is_failed(self):
+        s = self.verdict(bitstream=None, stage="synthesis")
+        self.assertEqual((s["status"], s["verification"]["bitstream"]), ("failed", "missing"))
+        self.assertFalse(B.build_ok(s, "warn"))
 
 
 if __name__ == "__main__":

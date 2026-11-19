@@ -16,8 +16,10 @@ SCHEMA = {
     "project": {"name": str, "top": str, "board": str, "sources": list, "lib": list, "constraints": list,
                 "include_dirs": list, "defines": dict, "generics": dict},
     "sim": {"tests": list, "timeout": int, "simulator": str},
-    "build": {"dir": str, "jobs": int, "synth_strategy": str, "impl_strategy": str, "timing": str},
+    "build": {"dir": str, "jobs": int, "synth_strategy": str, "impl_strategy": str, "timing": str, "waive": dict},
 }
+# A Vivado message id as printed in brackets: "Common 17-55", "Synth 8-6859", "DRC NSTD-1".
+MSG_ID_RE = re.compile(r"^[A-Za-z][\w]*\s+[\w-]+$")
 LOCAL_SCHEMA = {"vivado": str, "iverilog": str, "build_dir": str, "jobs": int, "simulator": str}
 NAME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_-]*$")
 IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_$]*$")
@@ -44,6 +46,7 @@ class Config:
     synth_strategy: str
     impl_strategy: str
     timing_policy: str
+    waivers: dict[str, str] = field(default_factory=dict)   # Vivado message id -> why it is acceptable
     vivado_hint: str | None = None
     iverilog_hint: str | None = None
     warnings: list[str] = field(default_factory=list)
@@ -132,6 +135,11 @@ class Config:
     def summary_file(self) -> Path:
         return self.build_dir / "reports" / "summary.json"
 
+    @property
+    def manifest_file(self) -> Path:
+        """What the last bitstream was built from (written only when a build produced one)."""
+        return self.build_dir / "reports" / "manifest.json"
+
     def to_dict(self) -> dict:
         srcs, _ = self.source_files()
         cons, _ = self.constraint_files()
@@ -154,6 +162,7 @@ class Config:
             "synth_strategy": self.synth_strategy,
             "impl_strategy": self.impl_strategy,
             "timing_policy": self.timing_policy,
+            "waivers": self.waivers,
             "sim": {"timeout": self.sim_timeout, "simulator": self.simulator},
         }
 
@@ -247,6 +256,15 @@ def load_config(path: Path | None = None) -> Config:
     simulator = local.get("simulator") or sim.get("simulator", "auto")
     if simulator not in ("auto", "xsim", "iverilog"):
         raise ForgeError("[sim].simulator must be \"auto\", \"xsim\" or \"iverilog\"")
+    waivers: dict[str, str] = {}
+    for msg_id, reason in build.get("waive", {}).items():
+        if not MSG_ID_RE.match(msg_id):
+            raise ForgeError(f"[build.waive] key '{msg_id}' is not a Vivado message id like \"Common 17-55\"",
+                             hint="Copy the id from the brackets in the message: CRITICAL WARNING: [Common 17-55] ...")
+        if not isinstance(reason, str) or not reason.strip():
+            raise ForgeError(f"[build.waive] \"{msg_id}\" needs a reason: why this message is acceptable for this design",
+                             hint='Example: "Designutils 20-1280" = "clk_wiz OOC constraints; reviewed by <name>"')
+        waivers[" ".join(msg_id.split())] = reason.strip()
 
     include_dirs = [(root / d) if not os.path.isabs(d) else Path(d) for d in project.get("include_dirs", [])]
     include_dirs.append(TB_INCLUDE_DIR)
@@ -271,6 +289,7 @@ def load_config(path: Path | None = None) -> Config:
         synth_strategy=build.get("synth_strategy", "Vivado Synthesis Defaults"),
         impl_strategy=build.get("impl_strategy", "Vivado Implementation Defaults"),
         timing_policy=timing,
+        waivers=waivers,
         vivado_hint=local.get("vivado"),
         iverilog_hint=local.get("iverilog"),
         warnings=warnings,

@@ -142,6 +142,7 @@ class RunResult:
     output: str
     timed_out: bool
     seconds: float
+    start_error: str | None = None   # the OS error when the program could not be started at all
 
 
 def _kill_tree(proc: subprocess.Popen) -> None:
@@ -173,7 +174,7 @@ def run(cmd: list[str | Path], cwd: Path | None = None, timeout: float | None = 
                                 stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, env=env,
                                 text=True, encoding="utf-8", errors="replace", bufsize=1, **kwargs)
     except OSError as exc:
-        return RunResult(127, f"failed to start {args[0]}: {exc}", False, 0.0)
+        return RunResult(127, f"failed to start {args[0]}: {exc}", False, 0.0, start_error=str(exc))
     timed_out = threading.Event()
     timer = None
     if timeout:

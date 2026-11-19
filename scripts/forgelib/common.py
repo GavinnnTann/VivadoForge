@@ -28,11 +28,18 @@ IP_EXTS = {".xci"}
 
 
 class ForgeError(Exception):
-    """An error with a message meant for the user (no traceback)."""
+    """An error with a message meant for the user (no traceback).
 
-    def __init__(self, message: str, hint: str | None = None):
+    `code` is a stable machine-readable category for agents and scripts (printed in --json
+    output): config, board, vivado_not_found, vivado_start_failed, no_build, stale_bitstream,
+    approval_required, cancelled, ... `details` adds structured fields to the JSON error.
+    """
+
+    def __init__(self, message: str, hint: str | None = None, code: str = "error", details: dict | None = None):
         super().__init__(message)
         self.hint = hint
+        self.code = code
+        self.details = details or {}
 
 
 @dataclass

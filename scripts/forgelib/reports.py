@@ -77,6 +77,8 @@ def parse_utilization(text: str) -> dict:
         used, avail, util = _num(cells[1]), _num(cells[-2]), _num(cells[-1])
         if used is None:
             continue
+        if util is None and avail:
+            util = round(100.0 * used / avail, 2)   # Vivado prints "<0.01" for tiny percentages
         out[key] = {"used": used, "available": avail, "percent": util}
     return out
 

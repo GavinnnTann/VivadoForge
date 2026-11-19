@@ -109,17 +109,37 @@ proc ::forge::build {} {
 
 # ------------------------------------------------------------------------------------------------
 # Hardware: program (volatile), flash (non-volatile), list devices
+#
+# program and flash run only from `python scripts/forge.py program|flash`, which first checks that
+# the bitstream was built from the current sources and that a person approved. Called from an
+# interactive or MCP session they refuse, so they are never an unguarded path to the hardware.
+# Every error path closes the hardware session, so a failed attempt leaves no session open.
 # ------------------------------------------------------------------------------------------------
+proc ::forge::fail {code msg} {
+    error $msg "" [list FORGE $code]
+}
+
+proc ::forge::require_cli {action} {
+    if {![info exists ::forge::from_cli] || !$::forge::from_cli} {
+        fail not_from_cli "forge::$action only runs from 'python scripts/forge.py $action', which checks that the\
+            bitstream matches the current sources and asks a person to approve. Use that command instead."
+    }
+}
+
 proc ::forge::hw_open {} {
-    open_hw_manager
-    connect_hw_server -allow_non_jtag
+    if {[catch {open_hw_manager; connect_hw_server -allow_non_jtag} msg]} {
+        hw_close
+        fail no_hw_server "could not start or reach the Vivado hardware server ($msg)"
+    }
     if {[catch {open_hw_target} msg]} {
-        catch {disconnect_hw_server}
-        catch {close_hw_manager}
-        error "no JTAG target found ($msg). Check the USB cable, board power and cable drivers."
+        hw_close
+        fail no_jtag_target "no JTAG target found ($msg). Check the USB cable, board power and cable drivers."
     }
     set devs [get_hw_devices -quiet]
-    if {[llength $devs] == 0} { error "the JTAG chain has no devices" }
+    if {[llength $devs] == 0} {
+        hw_close
+        fail no_device "the JTAG chain has no devices"
+    }
     set want ""
     regexp -nocase {^(xc[0-9]+[a-z]+[0-9]+t)} [get part] -> want
     foreach d $devs {
@@ -131,7 +151,7 @@ proc ::forge::hw_open {} {
     set found {}
     foreach d $devs { lappend found "$d ([get_property PART $d])" }
     hw_close
-    error "connected FPGA is [join $found {, }] but the project targets [get part]. Check \[project\].board in forge.toml."
+    fail wrong_device "connected FPGA is [join $found {, }] but the project targets [get part]. Check \[project\].board in forge.toml."
 }
 
 proc ::forge::hw_close {} {
@@ -141,22 +161,39 @@ proc ::forge::hw_close {} {
 }
 
 proc ::forge::program {} {
+    require_cli program
     set bit [bitstream]
-    if {![file exists $bit]} { error "bitstream not found: $bit (run 'python scripts/forge.py build' first)" }
+    if {![file exists $bit]} { fail no_bitstream "bitstream not found: $bit (run 'python scripts/forge.py build' first)" }
     set dev [hw_open]
-    say "programming $dev with $bit"
-    set_property PROGRAM.FILE $bit $dev
-    program_hw_devices $dev
-    refresh_hw_device $dev
+    if {[catch {
+        say "programming $dev with $bit"
+        set_property PROGRAM.FILE $bit $dev
+        program_hw_devices $dev
+        refresh_hw_device $dev
+    } msg opts]} {
+        hw_close
+        return -options $opts $msg
+    }
     hw_close
     say "programmed (volatile: the design is lost at power-off)"
 }
 
 proc ::forge::flash {} {
+    require_cli flash
     set bit [bitstream]
-    if {![file exists $bit]} { error "bitstream not found: $bit (run 'python scripts/forge.py build' first)" }
-    set mcs [file join [runs_dir] impl_1 "[get top].mcs"]
+    if {![file exists $bit]} { fail no_bitstream "bitstream not found: $bit (run 'python scripts/forge.py build' first)" }
     set dev [hw_open]
+    if {[catch {write_flash $dev $bit} msg opts]} {
+        catch {endgroup}
+        hw_close
+        return -options $opts $msg
+    }
+    hw_close
+    say "flash programmed and verified. Power-cycle or press PROG/reset to boot from flash."
+}
+
+proc ::forge::write_flash {dev bit} {
+    set mcs [file join [runs_dir] impl_1 "[get top].mcs"]
     refresh_hw_device $dev
 
     # Pick the first configuration-memory part name Vivado knows from the board's list.
@@ -169,8 +206,7 @@ proc ::forge::flash {} {
         }
     }
     if {$cfgmem_part eq ""} {
-        hw_close
-        error "none of the flash parts listed in board.json are known to this Vivado ([get flash_parts]). Run 'get_cfgmem_parts *spi*' in a Vivado Tcl console to find the right name."
+        fail unknown_flash_part "none of the flash parts listed in board.json are known to this Vivado ([get flash_parts]). Run 'get_cfgmem_parts *spi*' in a Vivado Tcl console to find the right name."
     }
     say "flash part: $cfgmem_part"
     create_hw_cfgmem -hw_device $dev [lindex [get_cfgmem_parts $cfgmem_part] 0]
@@ -200,8 +236,6 @@ proc ::forge::flash {} {
     endgroup
 
     refresh_hw_device $dev
-    hw_close
-    say "flash programmed and verified. Power-cycle or press PROG/reset to boot from flash."
 }
 
 proc ::forge::devices {} {
@@ -248,12 +282,15 @@ if {[info exists ::argv] && [lindex $::argv 0] eq "--forge"} {
         puts "FORGE_ERROR: unknown action '$::forge::action'"
         exit 2
     }
+    set ::forge::from_cli 1
     if {[catch {
         ::forge::load [lindex $::argv 2]
         ::forge::$::forge::action
-    } ::forge::msg]} {
+    } ::forge::msg ::forge::opts]} {
         puts "FORGE_ERROR: $::forge::msg"
-        puts $::errorInfo
+        set ::forge::code [dict get $::forge::opts -errorcode]
+        if {[lindex $::forge::code 0] eq "FORGE"} { puts "FORGE_ERROR_CODE: [lindex $::forge::code 1]" }
+        puts [dict get $::forge::opts -errorinfo]
         exit 1
     }
     exit 0

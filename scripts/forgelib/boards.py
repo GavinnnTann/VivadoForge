@@ -120,14 +120,18 @@ def load_board(board_id: str) -> Board:
     if not bfile.is_file():
         raise ForgeError(f"Unknown board '{board_id}'.",
                          hint=f"Known boards: {', '.join(board_ids()) or 'none'}. "
-                              "Add one with boards/<id>/board.json + master.xdc (see docs/boards.md).")
-    data = load_json(bfile)
+                              "Add one with boards/<id>/board.json + master.xdc (see docs/boards.md).", code="board")
+    try:
+        data = load_json(bfile)
+    except ForgeError as exc:
+        exc.code = "board"
+        raise
     missing = [k for k in REQUIRED_KEYS if k not in data]
     if missing:
-        raise ForgeError(f"{rel(bfile)} is missing keys: {', '.join(missing)}")
+        raise ForgeError(f"{rel(bfile)} is missing keys: {', '.join(missing)}", code="board")
     master_path = bdir / data["master_xdc"]
     if not master_path.is_file():
-        raise ForgeError(f"{rel(bfile)}: master_xdc '{data['master_xdc']}' not found.")
+        raise ForgeError(f"{rel(bfile)}: master_xdc '{data['master_xdc']}' not found.", code="board")
     master = read_xdc(master_path, include_commented=True)
     board = Board(id=board_id, dir=bdir, data=data, master=master)
     names = list(master.ports)

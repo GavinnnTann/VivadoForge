@@ -10,6 +10,7 @@ import time
 from pathlib import Path
 
 from . import __version__
+from . import manifest as M
 from . import reports as R
 from .boards import Board
 from .build_dir import ensure_build_dir
@@ -26,6 +27,9 @@ BENIGN_IDS = {
     "Device 21-403": "speed file loaded",
     "Constraints 18-5210": "no constraints selected for write",
 }
+
+# Critical warnings that repeat what the timing verdict already reports.
+TIMING_MSG_IDS = {"Timing 38-282"}   # "The design failed to meet the timing requirements"
 
 REPORT_FILES = {
     "timing": "{top}_timing_summary_routed.rpt",
@@ -104,7 +108,117 @@ def _vivado_batch(cfg: Config, vivado: Vivado, action: str, out: Out, verbose: b
         elif interesting.match(line):
             out(f"    {line.removeprefix('FORGE: ').replace('FORGE_ERROR: ', 'ERROR: ')}")
     r = run(cmd, cwd=cfg.build_dir, on_line=show)
+    if r.start_error:
+        raise ForgeError(f"Could not start Vivado ({vivado.vivado.as_posix()}): {r.start_error}",
+                         hint="Check the 'vivado' path in forge.local.toml (python scripts/forge.py setup --detect).",
+                         code="vivado_start_failed")
     return r.returncode, r.output
+
+
+# ---------------------------------------------------------------------------------------------
+# Verdicts: what a build verified, kept apart from the Vivado run so that `report`, `info` and
+# `program` re-derive them with the current [build.waive] settings without a rebuild.
+# ---------------------------------------------------------------------------------------------
+TIMING_TEXT = {"met": "met", "failed": "NOT MET", "incomplete": "INCOMPLETE (some registers have no clock constraint)",
+               "unconstrained": "NOT CHECKED (no clock constraint)", "not_applicable": "no clocked logic",
+               "unknown": "UNKNOWN (no readable timing report)"}
+
+
+def _unclocked(timing: dict) -> int:
+    checks = timing.get("checks") or {}
+    return int(checks.get("no_clock") or 0) + int(checks.get("unconstrained_internal_endpoints") or 0)
+
+
+def timing_verdict(s: dict) -> str:
+    """met | failed | incomplete | unconstrained | not_applicable | unknown."""
+    if "timing" not in (s.get("reports") or {}):
+        return "unknown"
+    t = s.get("timing") or {}
+    if t.get("met") is False:
+        return "failed"
+    if t.get("met") is True:
+        return "incomplete" if _unclocked(t) else "met"
+    if t.get("constrained") is False:
+        ff = ((s.get("utilization") or {}).get("ff") or {}).get("used")
+        return "not_applicable" if ff == 0 and not _unclocked(t) else "unconstrained"
+    return "unknown"
+
+
+def evaluate(s: dict, waivers: dict[str, str] | None = None) -> dict:
+    """Set status, verification and reasons from the facts a build recorded.
+
+    "passed" means all of: a bitstream was written, timing was analysed and met (or the design has
+    no clocked logic), the DRC report is clean, and no critical warning is left unexplained. A
+    person explains one by waiving its id in [build.waive]. Hardware is never verified here.
+    """
+    waivers = waivers or {}
+    s.pop("verified_on_hardware", None)
+    crit = s.get("critical_warnings") or []
+    for m in crit:
+        m.pop("waived", None)
+        if m.get("id") in waivers:
+            m["waived"] = waivers[m["id"]]
+    blocking = [m for m in crit if "benign" not in m and "waived" not in m and m.get("id") not in TIMING_MSG_IDS]
+    cw = "present" if blocking else ("waived" if any("waived" in m for m in crit) else "none")
+    if not s.get("bitstream"):
+        s["verification"] = {"bitstream": "missing", "timing": "unknown", "drc": "unknown",
+                             "critical_warnings": cw, "hardware": "not_tested"}
+        s["reasons"] = [{"check": "bitstream", "text": f"no bitstream: the build failed during {s.get('stage')}"}]
+        s["status"] = "failed"
+        return s
+
+    reasons: list[dict] = []
+    t = timing_verdict(s)
+    tm = s.get("timing") or {}
+    if t == "failed":
+        reasons.append({"check": "timing", "text": f"timing not met: WNS {tm.get('wns')} ns, "
+                                                   f"{tm.get('tns_failing')} failing endpoints"})
+    elif t == "incomplete":
+        reasons.append({"check": "timing", "text": f"{_unclocked(tm)} register pins have no clock constraint, so their "
+                        "timing was not checked (create_clock on every clock input; make slow events with clock "
+                        "enables, not divided clocks)"})
+    elif t == "unconstrained":
+        reasons.append({"check": "timing", "text": "no timing constraints: add create_clock for the clock input "
+                                                   "(forge.py pins add <board clock port>=<your clock port>)"})
+    elif t == "unknown":
+        reasons.append({"check": "reports", "text": "the timing report is missing or unreadable, so timing was not checked"})
+
+    if "drc" not in (s.get("reports") or {}):
+        drc = "unknown"
+        reasons.append({"check": "reports", "text": "the DRC report is missing, so design rules were not checked"})
+    else:
+        bad = [r for r in s.get("drc") or [] if str(r.get("severity", "")).lower() in ("error", "critical warning")
+               and f"DRC {r.get('rule')}" not in waivers]
+        drc = "violations" if bad else "passed"
+        for r in bad:
+            reasons.append({"check": "drc", "text": f"DRC {r['rule']} ({r['severity']}, {r['count']}x): {r['description']}"})
+
+    if blocking:
+        reasons.append({"check": "critical_warnings",
+                        "text": f"{len(blocking)} critical warning(s): fix them, or waive an id in [build.waive] "
+                                "with the reason it is acceptable for this design"})
+
+    s["verification"] = {"bitstream": "generated", "timing": t, "drc": drc, "critical_warnings": cw,
+                         "hardware": "not_tested"}
+    s["reasons"] = reasons
+    if not reasons:
+        s["status"], s["stage"] = "passed", "done"
+    elif t == "failed":
+        s["status"], s["stage"] = "timing_failed", "timing"
+    else:
+        s["status"], s["stage"] = "unverified", "done"
+    return s
+
+
+def build_ok(s: dict | None, timing_policy: str = "error") -> bool:
+    """Exit-code verdict: "passed", or with [build].timing = "warn" only timing problems left."""
+    if not s:
+        return False
+    if s.get("status") == "passed":
+        return True
+    if timing_policy == "warn" and s.get("status") in ("timing_failed", "unverified"):
+        return all(r.get("check") == "timing" for r in s.get("reasons", []))
+    return False
 
 
 def _collect(cfg: Config, board: Board, vivado: Vivado, rc: int, output: str, seconds: float) -> dict:
@@ -147,6 +261,7 @@ def _collect(cfg: Config, board: Board, vivado: Vivado, rc: int, output: str, se
     if bit_ok:
         shutil.copy2(bit, cfg.build_dir / f"{cfg.name}.bit")
 
+    stage = "done"
     if not bit_ok:
         if not (synth / "runme.log").is_file():
             stage = "setup"
@@ -154,27 +269,23 @@ def _collect(cfg: Config, board: Board, vivado: Vivado, rc: int, output: str, se
             stage = "synthesis"
         else:
             stage = "implementation"
-        status = "failed"
-    elif timing.get("met") is False:
-        stage, status = "timing", "timing_failed"
-    else:
-        stage, status = "done", "passed"
+    log = rel(cfg.build_dir / "logs" / "vivado_build.log")
+    all_errors = [{"severity": "error", "id": "forge", "text": t} for t in forge_err] + errors
+    if not bit_ok and not all_errors:
+        all_errors.append({"severity": "error", "id": "forge",
+                           "text": f"Vivado exited with code {rc} and printed no error message; see {log}"})
 
     notes = []
-    if bit_ok and not timing.get("constrained", True):
-        notes.append("No timing constraints: add a create_clock for the clock input (forge.py pins add <clock port>).")
-    if timing.get("checks", {}).get("no_clock"):
-        notes.append(f"{timing['checks']['no_clock']} register pins have no clock constraint.")
-    if crit:
-        notes.append(f"{len(crit)} critical warnings: read them; they usually mean the hardware will not behave as simulated.")
     if any(r["rule"] == "TIMING-18" for r in meth):
         notes.append("TIMING-18 (missing input/output delay) is expected for LEDs, buttons and other slow I/O; "
                      "add set_input_delay/set_output_delay only for synchronous interfaces to external chips.")
 
-    return {
+    summary = {
         "forge_version": __version__,
-        "status": status,
+        "status": "failed",          # evaluate() sets status, stage, verification and reasons
         "stage": stage,
+        "verification": {},
+        "reasons": [],
         "project": cfg.name,
         "top": cfg.top,
         "board": board.id,
@@ -187,38 +298,44 @@ def _collect(cfg: Config, board: Board, vivado: Vivado, rc: int, output: str, se
         "utilization": util,
         "drc": [r for r in drc if r["severity"] != "Advisory"],
         "methodology": meth,
-        "errors": (forge_err and [{"severity": "error", "id": "forge", "text": t} for t in forge_err] or []) + errors,
+        "errors": all_errors,
         "critical_warnings": crit,
         "warnings": warns[:100],
         "warning_count": len(real_warns),
         "benign_warning_count": len(warns) - len(real_warns),
         "summary_file": rel(cfg.summary_file),
         "reports": copied,
-        "logs": {"vivado": rel(cfg.build_dir / "logs" / "vivado_build.log"),
-                 "synthesis": rel(synth / "runme.log"), "implementation": rel(impl / "runme.log")},
+        "logs": {"vivado": log, "synthesis": rel(synth / "runme.log"), "implementation": rel(impl / "runme.log")},
         "notes": notes,
-        "verified_on_hardware": False,
     }
+    return evaluate(summary, cfg.waivers)
 
 
 def build(cfg: Config, board: Board, vivado: Vivado, out: Out, verbose: bool = False) -> dict:
     write_context(cfg, board)
-    summary_path = cfg.summary_file
-    if summary_path.is_file():
-        summary_path.unlink()
+    # Forget the previous result first: if this build fails, nothing may vouch for the old bitstream.
+    for stale in (cfg.summary_file, cfg.manifest_file):
+        if stale.is_file():
+            stale.unlink()
+    inputs = M.collect_inputs(cfg, board)   # what Vivado is about to read
     out(f"Building {cfg.name} (top {cfg.top}) for {board.name} [{board.part}] with Vivado {vivado.version}")
     out(f"  build folder: {cfg.build_dir.as_posix()}")
     t0 = time.monotonic()
     rc, output = _vivado_batch(cfg, vivado, "build", out, verbose)
     summary = _collect(cfg, board, vivado, rc, output, time.monotonic() - t0)
-    summary_path.parent.mkdir(parents=True, exist_ok=True)
-    summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    if summary.get("bitstream"):
+        man = M.write(cfg, inputs, cfg.bitstream, summary)
+        summary["bitstream_sha256"] = man["bitstream"]["sha256"]
+        summary["inputs_sha256"] = man["inputs_sha256"]
+    cfg.summary_file.parent.mkdir(parents=True, exist_ok=True)
+    cfg.summary_file.write_text(json.dumps(summary, indent=2), encoding="utf-8")
     return summary
 
 
 def format_summary(s: dict) -> list[str]:
     lines = []
     status = {"passed": "BUILD PASSED", "timing_failed": "BUILD FINISHED, TIMING FAILED",
+              "unverified": "BUILD FINISHED, NOT VERIFIED",
               "failed": f"BUILD FAILED during {s.get('stage')}"}.get(s["status"], s["status"])
     lines.append(f"{status}  ({s.get('seconds', 0)} s, Vivado {s.get('vivado')})")
     for e in s.get("errors", [])[:15]:
@@ -226,21 +343,29 @@ def format_summary(s: dict) -> list[str]:
         lines.append(f"  ERROR    [{e['id']}] {e['text']}{where}")
     for c in s.get("critical_warnings", [])[:15]:
         where = f"  --> {c['file']}:{c['line']}" if c.get("file") else ""
-        lines.append(f"  CRITICAL [{c['id']}] {c['text']}{where}")
+        why = f"  (waived: {c['waived']})" if c.get("waived") else ("  (benign)" if c.get("benign") else "")
+        lines.append(f"  CRITICAL [{c['id']}] {c['text']}{where}{why}")
     t = s.get("timing") or {}
-    if "wns" in t:
-        met = {True: "met", False: "NOT MET", None: "unconstrained"}[t.get("met")]
-        lines.append(f"  timing:  {met}   WNS {t.get('wns')} ns   TNS {t.get('tns')} ns   "
-                     f"WHS {t.get('whs')} ns   failing endpoints {t.get('tns_failing')}")
+    v = s.get("verification") or {}
+    if t.get("wns") is not None or v.get("bitstream") == "generated":
+        numbers = (f"   WNS {t.get('wns')} ns   TNS {t.get('tns')} ns   WHS {t.get('whs')} ns   "
+                   f"failing endpoints {t.get('tns_failing')}") if t.get("wns") is not None else ""
+        lines.append(f"  timing:  {TIMING_TEXT.get(v.get('timing'), v.get('timing'))}{numbers}")
     u = s.get("utilization") or {}
     if u:
-        parts = [f"{k.upper()} {v['used']}/{v['available']} ({v['percent']}%)" for k, v in u.items()
+        parts = [f"{k.upper()} {v_['used']}/{v_['available']} ({v_['percent']}%)" for k, v_ in u.items()
                  if k in ("lut", "ff", "bram", "dsp", "io")]
         lines.append("  usage:   " + "   ".join(parts))
     if s.get("warning_count"):
         lines.append(f"  warnings: {s['warning_count']} to review (all messages: {s.get('summary_file', 'reports/summary.json')})")
     elif s.get("benign_warning_count"):
         lines.append(f"  warnings: none that need action ({s['benign_warning_count']} routine Vivado notices)")
+    if v.get("bitstream") == "generated":
+        lines.append(f"  checked: timing {v.get('timing')} | DRC {v.get('drc')} | critical warnings "
+                     f"{v.get('critical_warnings')} | hardware {str(v.get('hardware')).replace('_', ' ')}")
+    for r in s.get("reasons", []):
+        if r.get("check") != "bitstream":
+            lines.append(f"  to fix:  {r['text']}")
     for n in s.get("notes", []):
         lines.append(f"  note:    {n}")
     if s.get("bitstream"):
@@ -254,13 +379,22 @@ def hardware(cfg: Config, board: Board, vivado: Vivado, action: str, out: Out, v
     write_context(cfg, board)
     t0 = time.monotonic()
     rc, output = _vivado_batch(cfg, vivado, action, out, verbose)
-    errors = [ln.removeprefix("FORGE_ERROR:").strip() for ln in output.splitlines() if ln.startswith("FORGE_ERROR:")]
-    errors += [m["text"] for m in R.parse_messages(output) if m["severity"] == "error"]
-    result: dict = {"action": action, "ok": rc == 0 and not errors, "seconds": round(time.monotonic() - t0, 1),
-                    "errors": errors, "log": rel(cfg.build_dir / "logs" / f"vivado_{action}.log")}
+    lines = output.splitlines()
+    forge_errors = [ln.removeprefix("FORGE_ERROR:").strip() for ln in lines if ln.startswith("FORGE_ERROR:")]
+    codes = [ln.removeprefix("FORGE_ERROR_CODE:").strip() for ln in lines if ln.startswith("FORGE_ERROR_CODE:")]
+    errors = forge_errors + [m["text"] for m in R.parse_messages(output) if m["severity"] == "error"]
+    log = rel(cfg.build_dir / "logs" / f"vivado_{action}.log")
+    if rc != 0 and not errors:
+        errors.append(f"Vivado exited with code {rc} and printed no error message; see {log}")
+    ok = rc == 0 and not errors
+    result: dict = {"action": action, "ok": ok, "seconds": round(time.monotonic() - t0, 1),
+                    "errors": errors, "log": log}
+    if not ok:
+        # FORGE_ERROR_CODE comes from forge.tcl (no_jtag_target, wrong_device, ...); otherwise a Tcl or Vivado error
+        result["code"] = codes[0] if codes else ("tcl_error" if forge_errors else "vivado_error")
     if action == "devices":
         devs = []
-        for ln in output.splitlines():
+        for ln in lines:
             if ln.startswith("FORGE_DEVICE:"):
                 body = ln.removeprefix("FORGE_DEVICE:").strip()
                 if body == "none":
@@ -271,9 +405,11 @@ def hardware(cfg: Config, board: Board, vivado: Vivado, action: str, out: Out, v
 
 
 def last_summary(cfg: Config) -> dict | None:
-    if cfg.summary_file.is_file():
-        try:
-            return json.loads(cfg.summary_file.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            return None
-    return None
+    """The last build summary, with its verdict re-derived under the current [build.waive] settings."""
+    try:
+        s = json.loads(cfg.summary_file.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(s, dict) or "status" not in s:
+        return None
+    return evaluate(s, cfg.waivers)

@@ -11,6 +11,7 @@ from pathlib import Path
 
 from . import __version__
 from . import build as B
+from . import manifest as M
 from . import sim as S
 from . import templates as T
 from .boards import board_ids, load_board, validate_board
@@ -45,7 +46,27 @@ commands (run `forge.py <command> -h` for options):
 
 # ---------------------------------------------------------------------------------------------
 def _cfg(args) -> Config:
-    return load_config(Path(args.project) if args.project else None)
+    try:
+        return load_config(Path(args.project) if args.project else None)
+    except ForgeError as exc:
+        if exc.code == "error":
+            exc.code = "config"
+        raise
+
+
+def _no_vivado(hint: str = "Set 'vivado' in forge.local.toml (forge.py setup --detect) or $VIVADO_PATH.") -> ForgeError:
+    return ForgeError("Vivado not found.", hint=hint, code="vivado_not_found")
+
+
+def _last_build(cfg: Config, board) -> dict | None:
+    """The last build summary plus whether its bitstream still matches the design."""
+    s = B.last_summary(cfg)
+    if s is None:
+        return None
+    fresh = M.freshness(cfg, board)
+    s["up_to_date"] = fresh["up_to_date"] if fresh else None
+    s["changes_since_build"] = fresh["changes"] if fresh else []
+    return s
 
 
 def _emit(args, out: Out, data: dict, ok: bool = True) -> int:
@@ -73,7 +94,7 @@ def cmd_info(args, out: Out) -> int:
     cfg = _cfg(args)
     board = load_board(cfg.board_id)
     viv, ivl = _tools(cfg)
-    last = B.last_summary(cfg)
+    last = _last_build(cfg, board)
     data = {
         "forge_version": __version__,
         "project": cfg.to_dict(),
@@ -82,7 +103,9 @@ def cmd_info(args, out: Out) -> int:
         "paths": {"build_dir": cfg.build_dir.as_posix(), "bitstream": cfg.bitstream.as_posix(),
                   "summary": cfg.summary_file.as_posix(), "context_tcl": (cfg.build_dir / "forge_context.tcl").as_posix(),
                   "forge_tcl": (REPO_ROOT / "scripts" / "forge.tcl").as_posix()},
-        "last_build": {k: last.get(k) for k in ("status", "stage", "finished", "timing", "utilization", "bitstream")} if last else None,
+        "last_build": {k: last.get(k) for k in ("status", "stage", "finished", "verification", "reasons", "up_to_date",
+                                                "changes_since_build", "timing", "utilization", "bitstream")}
+                      if last else None,
         "commands": {c: forge_cmd(c) for c in ("check", "sim", "build", "report", "program", "flash")},
     }
     if not args.json:
@@ -96,7 +119,10 @@ def cmd_info(args, out: Out) -> int:
         out(f"  build   : {cfg.build_dir.as_posix()}")
         if last:
             t = last.get("timing") or {}
-            out(f"  last    : {last.get('status')} at {last.get('finished')}  WNS {t.get('wns')} ns")
+            fresh = {True: "matches the sources", False: "OUT OF DATE (sources changed since)",
+                     None: "not on record (build again before programming)"}
+            out(f"  last    : {last.get('status')} at {last.get('finished')}  WNS {t.get('wns')} ns  "
+                f"bitstream {fresh[last.get('up_to_date')]}")
         else:
             out("  last    : no build yet")
         out(f"  vivado  : {viv.version + '  ' + viv.vivado.as_posix() if viv else 'NOT FOUND (see docs/getting-started.md)'}")
@@ -164,24 +190,28 @@ def cmd_build(args, out: Out) -> int:
                 _findings_text(out, errs)
             return _emit(args, out, {"status": "check_failed", "findings": [f.to_dict() for f in errs]}, False)
     if viv is None:
-        raise ForgeError("Vivado not found.", hint="Set 'vivado' in forge.local.toml (forge.py setup) or $VIVADO_PATH.")
+        raise _no_vivado()
     summary = B.build(cfg, board, viv, out, verbose=args.verbose)
     for line in B.format_summary(summary):
         out(line)
-    ok = summary["status"] == "passed" or (summary["status"] == "timing_failed" and cfg.timing_policy == "warn")
-    return _emit(args, out, summary, ok)
+    return _emit(args, out, summary, B.build_ok(summary, cfg.timing_policy))
 
 
 def cmd_report(args, out: Out) -> int:
     cfg = _cfg(args)
-    s = B.last_summary(cfg)
+    s = _last_build(cfg, load_board(cfg.board_id))
     if s is None:
-        raise ForgeError("No build summary yet.", hint=f"Run {forge_cmd('build')} first.")
+        raise ForgeError("No build summary yet.", hint=f"Run {forge_cmd('build')} first.", code="no_build")
     if not args.json:
         for line in B.format_summary(s):
             out(line)
+        if s.get("up_to_date") is False:
+            out("  OUT OF DATE: the design changed after this build, so the bitstream is not the current design:")
+            for c in s.get("changes_since_build", []):
+                out(f"    {c}")
         out(f"  full data: {rel(cfg.summary_file)}   reports: {rel(cfg.build_dir / 'reports')}")
-    return _emit(args, out, s, s.get("status") == "passed")
+    # A good build of sources that have since changed does not verify the current design.
+    return _emit(args, out, s, B.build_ok(s, cfg.timing_policy) and s.get("up_to_date") is not False)
 
 
 def _interactive() -> bool:
@@ -207,7 +237,8 @@ def _confirm(args, out: Out, what: str) -> None:
     if args.yes:
         return
     refuse = ForgeError(f"{what}: this changes physical hardware and needs explicit approval.",
-                        hint="A person must approve it. Re-run with --yes only after they have said yes.")
+                        hint="A person must approve it. Re-run with --yes only after they have said yes.",
+                        code="approval_required")
     if args.json or not _interactive():
         raise refuse
     try:
@@ -215,30 +246,41 @@ def _confirm(args, out: Out, what: str) -> None:
     except EOFError:
         raise refuse
     if reply not in ("y", "yes"):
-        raise ForgeError("Cancelled.")
+        raise ForgeError("Cancelled.", code="cancelled")
 
 
 def _hardware(args, out: Out, action: str) -> int:
     cfg = _cfg(args)
     board = load_board(cfg.board_id)
+    extra: dict = {}
+    if action in ("program", "flash"):
+        # Before anything else: the bitstream must be the one a forge build made from the current design.
+        man = M.verify_bitstream(cfg, board)
+        last = B.last_summary(cfg) or {}
+        warnings = [] if last.get("status") == "passed" else \
+            [r["text"] for r in last.get("reasons", [])] or [f"the last build has status '{last.get('status')}'"]
+        if warnings:
+            out(f"WARNING: the last build is '{last.get('status')}', so this design is not fully verified:")
+            for w in warnings:
+                out(f"  - {w}")
+        extra = {"bitstream": {"path": cfg.bitstream.as_posix(), "sha256": man["bitstream"]["sha256"],
+                               "built": man.get("built"), "build_status": last.get("status")},
+                 "warnings": warnings}
     viv, _ = _tools(cfg)
     if viv is None:
-        raise ForgeError("Vivado not found.", hint="Set 'vivado' in forge.local.toml (forge.py setup).")
+        raise _no_vivado()
     if action in ("program", "flash"):
-        if not cfg.bitstream.is_file():
-            raise ForgeError(f"No bitstream at {cfg.bitstream.as_posix()}.", hint=f"Run {forge_cmd('build')} first.")
-        last = B.last_summary(cfg) or {}
-        if last.get("status") == "timing_failed":
-            out("WARNING: the last build did not meet timing; the hardware may misbehave.")
         what = {"program": f"Program the FPGA on the {board.name} with {cfg.name} (volatile, lost at power-off)",
                 "flash": f"Erase and rewrite the configuration flash on the {board.name} with {cfg.name} "
                          f"(persistent: it boots this design at every power-up)"}[action]
         if action == "flash" and not board.flash.get("verified_on_hardware", False):
             out(f"NOTE: the flash settings for {board.id} have not been verified on hardware yet.")
         _confirm(args, out, what)
+        M.verify_bitstream(cfg, board)   # again: the prompt may have waited while files changed
     out({"program": "Programming FPGA ...", "flash": "Programming configuration flash ...",
          "devices": "Looking for JTAG devices ..."}[action])
     res = B.hardware(cfg, board, viv, action, out, verbose=args.verbose)
+    res.update(extra)
     if not args.json:
         if action == "devices":
             for d in res.get("devices", []):
@@ -255,7 +297,7 @@ def cmd_open(args, out: Out) -> int:
     cfg = _cfg(args)
     viv, _ = _tools(cfg)
     if viv is None:
-        raise ForgeError("Vivado not found.")
+        raise _no_vivado()
     if not cfg.xpr.is_file():
         raise ForgeError(f"No Vivado project at {cfg.xpr.as_posix()}.", hint=f"Run {forge_cmd('build')} first.")
     launch_detached([viv.vivado, cfg.xpr.name], cwd=cfg.xpr.parent)
@@ -566,7 +608,8 @@ def main(argv: list[str] | None = None) -> int:
         return HANDLERS[args.command](args, out)
     except ForgeError as exc:
         if getattr(args, "json", False):
-            print(json.dumps({"ok": False, "error": str(exc), "hint": exc.hint}, indent=2))
+            print(json.dumps({"ok": False, "error": str(exc), "hint": exc.hint, "code": exc.code, **exc.details},
+                             indent=2))
         else:
             print(f"error: {exc}", file=sys.stderr)
             if exc.hint:
