@@ -112,6 +112,38 @@ def _bits(top: Module) -> tuple[dict[str, str], list[str]]:
     return bits, unknown
 
 
+ROLE_DIR = {"in": "input", "out": "output"}
+
+
+def _check_role(board: Board, bit: str, direction: str, pin: str, masters: list, where: str, line: int,
+                f: list[Finding]) -> None:
+    """The port must point the way the board is wired, and an _n (active-low) name must fit the polarity."""
+    roles = [r for m in masters for r in board.roles_of(m.name)]
+    if not roles:
+        return
+    port_name = masters[0].name
+    base = bit.split("[")[0]
+    dirs = {r.dir for r in roles if r.dir in ROLE_DIR}
+    if len(dirs) == 1 and direction in ("input", "output", "inout"):
+        role_dir = dirs.pop()
+        want = ROLE_DIR[role_dir]
+        role = next(r for r in roles if r.dir == role_dir)
+        if direction != want:
+            what = (f"an input to the FPGA (board {role.name}): the design must only read it" if role_dir == "in"
+                    else f"an output of the FPGA (board {role.name}): the design must drive it")
+            f.append(Finding("warning" if direction == "inout" else "error", "direction",
+                             f"port '{bit}' is declared {direction}, but pin {pin} is {port_name}, {what}", where, line,
+                             hint=f"Declare '{base}' as {want} in the top module, or connect it to another pin "
+                                  "(forge.py board lists each role's direction)."))
+    lows = {r.active_low for r in roles if r.active_low is not None}
+    if base.endswith("_n") and lows == {False}:
+        role = next(r for r in roles if r.active_low is False)
+        f.append(Finding("warning", "polarity",
+                         f"port '{bit}' is named active-low (_n), but {port_name} (board {role.name}) is active-high "
+                         f"on the {board.name}: 1 means pressed / on", where, line,
+                         hint="Rename the port without _n, or invert the signal in the top module."))
+
+
 def _check_pins(cfg: Config, board: Board, top: Module, xdcs: list[Xdc], f: list[Finding], facts: dict) -> None:
     bits, unknown = _bits(top)
     for name in unknown:
@@ -158,6 +190,7 @@ def _check_pins(cfg: Config, board: Board, top: Module, xdcs: list[Xdc], f: list
         if mstd and std and mstd.upper() != std.upper():
             f.append(Finding("warning", "pins", f"port '{bit}' uses IOSTANDARD {std} but the board master says {mstd} for pin {pin}",
                              rel(x.path), line, hint="The bank voltage decides this; a mismatch is usually a DRC error."))
+        _check_role(board, bit, direction, pin, masters, rel(x.path), line, f)
 
     for x in xdcs:
         for port in x.ports.values():

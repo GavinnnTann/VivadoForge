@@ -293,6 +293,23 @@ class TestProjects(TempDir):
             load_config(self.tmp)
         self.assertIn("sources", str(ctx.exception))
 
+    def test_direction_and_polarity_follow_the_board(self):
+        (self.tmp / "forge.toml").write_text('[project]\nname = "t"\ntop = "top"\nboard = "basys3"\n')
+        (self.tmp / "src").mkdir()
+        (self.tmp / "src" / "top.v").write_text(
+            "`timescale 1ns / 1ps\n"
+            "module top(input wire clk, output wire btnC, input wire [1:0] led, input wire go_n, inout wire sw0);\n"
+            "  assign btnC = 1'b0;\nendmodule\n")
+        pins_add(load_config(self.tmp), load_board("basys3"), ["clk", "btnC", "led[0]", "led[1]", "btnU=go_n", "sw[0]=sw0"], None)
+        findings, _ = run_checks(load_config(self.tmp), None, None)
+        got = {(f.code, f.severity, f.message.split("'")[1]) for f in findings if f.code in ("direction", "polarity")}
+        self.assertEqual(got, {("direction", "error", "btnC"),       # driving a button pin
+                               ("direction", "error", "led[0]"),     # reading an LED pin
+                               ("direction", "error", "led[1]"),
+                               ("direction", "warning", "sw0"),      # inout on a switch
+                               ("polarity", "warning", "go_n")})     # _n name on an active-high button
+
+
 
 if __name__ == "__main__":
     unittest.main()

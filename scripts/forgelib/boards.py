@@ -72,6 +72,10 @@ class Board:
     def master_path(self) -> Path:
         return self.dir / self.data["master_xdc"]
 
+    def roles_of(self, master_port: str) -> list[Role]:
+        """The roles (led, button, uart_rx, ...) that a master XDC port belongs to."""
+        return [r for r in self.roles.values() if master_port in r.ports]
+
     def pins_by_package_pin(self) -> dict[str, list[XdcPort]]:
         """Package pin -> master ports. A pin can have several names (e.g. Arduino A6 is also XADC vaux12)."""
         out: dict[str, list[XdcPort]] = {}
