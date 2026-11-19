@@ -5,7 +5,9 @@
 //       .clk(clk), .rst(1'b0), .rx(uart_rx), .data(rx_byte), .valid(rx_valid), .frame_error());
 //
 // valid pulses for one clock when a byte has been received; data holds it until the next one.
-// frame_error is set together with valid when the stop bit was 0 (wrong baud rate or noise).
+// frame_error is a status bit for that byte, not a pulse: it updates together with valid (1 when
+// the stop bit was 0: wrong baud rate or noise) and holds, like data, until the next byte ends or
+// rst is asserted. Sample it when valid is high.
 // Bits are sampled in the middle of each bit period.
 module uart_rx #(
     parameter integer CLK_HZ = 100_000_000,

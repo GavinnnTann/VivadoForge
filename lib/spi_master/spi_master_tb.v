@@ -16,6 +16,17 @@ module spi_master_tb;
         .clk(clk), .rst(1'b0), .start(start), .tx_data(tx_data), .rx_data(rx_data), .busy(busy),
         .done(done), .sclk(sclk), .mosi(mosi), .miso(miso), .cs_n(cs_n));
 
+    // WIDTH = 1, the smallest legal size: one SCLK pulse per transfer. MISO is looped back.
+    reg  start1 = 1'b0;
+    reg  tx1 = 1'b0;
+    wire rx1, done1, sclk1, mosi1, cs1_n, busy1;
+    integer edges1;
+    spi_master #(.WIDTH(1), .CLK_DIV(2)) dut1 (
+        .clk(clk), .rst(1'b0), .start(start1), .tx_data(tx1), .rx_data(rx1), .busy(busy1),
+        .done(done1), .sclk(sclk1), .mosi(mosi1), .miso(mosi1), .cs_n(cs1_n));
+    always @(negedge cs1_n) edges1 = 0;
+    always @(posedge sclk1) if (!cs1_n) edges1 = edges1 + 1;
+
     `include "forge_tb.vh"
     `TEST_TIMEOUT(1_000_000)
 
@@ -46,6 +57,16 @@ module spi_master_tb;
         end
     endtask
 
+    task transfer1(input bit_value);
+        begin
+            @(posedge clk);
+            tx1 <= bit_value; start1 <= 1'b1;
+            @(posedge clk);
+            start1 <= 1'b0;
+            @(posedge done1); #1;
+        end
+    endtask
+
     reg [7:0] a [0:3];
     reg [7:0] b [0:3];
     initial begin
@@ -63,6 +84,14 @@ module spi_master_tb;
             `CHECK(cs_n == 1'b1, "CS released after the transfer")
             `CHECK(busy == 1'b0, "not busy after done")
         end
+
+        `CHECK(cs1_n == 1'b1 && sclk1 == 1'b0, "WIDTH=1: idle")
+        transfer1(1'b1);
+        `CHECK_EQ(rx1, 1'b1, "WIDTH=1: looped-back 1 received")
+        `CHECK_EQ(edges1, 1, "WIDTH=1: one SCLK rising edge")
+        transfer1(1'b0);
+        `CHECK_EQ(rx1, 1'b0, "WIDTH=1: looped-back 0 received")
+        `CHECK(cs1_n == 1'b1 && busy1 == 1'b0, "WIDTH=1: released after the transfer")
         `TEST_DONE
     end
 endmodule

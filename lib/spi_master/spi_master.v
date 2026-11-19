@@ -9,6 +9,7 @@
 // sampled on the rising edge. cs_n is low for the whole transfer; done pulses when rx_data is valid.
 // miso comes from outside the FPGA: at slow SCLK rates (CLK_DIV >= 2) the sampling point is far
 // from MISO's transitions, so no extra synchroniser is needed.
+// Parameters: WIDTH >= 1 bits per transfer, CLK_DIV >= 1.
 module spi_master #(
     parameter integer WIDTH   = 8,
     parameter integer CLK_DIV = 4
@@ -33,6 +34,9 @@ module spi_master #(
     reg [BW-1:0]    nbits  = {BW{1'b0}};
     reg [DW-1:0]    div    = {DW{1'b0}};
     reg             active = 1'b0;
+
+    // Shifts written without WIDTH-2 part-selects, which would be invalid for WIDTH = 1.
+    wire [WIDTH-1:0] tx_next = sh_tx << 1;           // bits still to send, MSB first
 
     assign busy = active;
 
@@ -65,7 +69,7 @@ module spi_master #(
             div <= {DW{1'b0}};
             if (!sclk) begin                          // rising edge: sample MISO
                 sclk  <= 1'b1;
-                sh_rx <= {sh_rx[WIDTH-2:0], miso};
+                sh_rx <= (sh_rx << 1) | miso;         // MISO enters at the LSB
             end else begin                            // falling edge: next bit or finish
                 sclk  <= 1'b0;
                 nbits <= nbits + 1'b1;
@@ -75,8 +79,8 @@ module spi_master #(
                     done    <= 1'b1;
                     rx_data <= sh_rx;
                 end else begin
-                    sh_tx <= {sh_tx[WIDTH-2:0], 1'b0};
-                    mosi  <= sh_tx[WIDTH-2];
+                    sh_tx <= tx_next;
+                    mosi  <= tx_next[WIDTH-1];
                 end
             end
         end else begin
