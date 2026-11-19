@@ -13,6 +13,7 @@
        |      build.py writes <build>/forge_context.tcl
        |      vivado -mode batch -source forge.tcl -tclargs --forge <action> forge_context.tcl
        |      reports.py turns logs and .rpt files into reports/summary.json
+       |      manifest.py records what the bitstream was built from (reports/manifest.json)
        '-- new/pins: templates.py (RTL from templates/, pins from the board master)
 
      scripts/forge.tcl  (Vivado side)
@@ -37,8 +38,15 @@
 - **Verdicts from output, not exit codes.** xsim exits 0 after `$fatal`, so a test passes only
   on `TEST PASSED` with no error lines.
 - **Safety by construction.** The build folder carries a marker and forge refuses to write to
-  or delete folders without it. `program`/`flash` need a real terminal confirmation or `--yes`.
-  `check` rejects pins that are not on the board.
+  or delete folders without it. `program`/`flash` need a real terminal confirmation or `--yes`,
+  and refuse a bitstream whose recorded inputs (`reports/manifest.json`) no longer match the
+  sources. The Tcl `forge::program`/`forge::flash` only run when started by `forge.py`.
+  `check` rejects pins that are not on the board and ports that point against the board wiring.
+- **Say what was verified.** A build summary separates "a bitstream exists" from "timing was
+  met", "DRC is clean" and "critical warnings are explained", and always reports hardware as
+  not tested. `passed` needs all of them; anything less is `unverified` with reasons. The
+  verdict is computed from the recorded facts, so `report` re-applies `[build.waive]` without a
+  rebuild.
 
 ## Tests
 

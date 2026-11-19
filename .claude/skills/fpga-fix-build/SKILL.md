@@ -1,6 +1,6 @@
 ---
 name: fpga-fix-build
-description: Use when forge.py build fails (synthesis, implementation or bitstream), or passes with critical warnings or DRC problems. Maps the common Vivado messages to causes and fixes.
+description: Use when forge.py build fails (synthesis, implementation or bitstream), or ends "unverified" with critical warnings, DRC problems or missing reports. Maps the common Vivado messages to causes and fixes.
 ---
 
 # Fix a failing or suspicious build
@@ -9,9 +9,14 @@ description: Use when forge.py build fails (synthesis, implementation or bitstre
 python scripts/forge.py report --json
 ```
 
-Look at `status`, `stage`, `errors[]` and `critical_warnings[]` (each has `id`, `text`, and
-`file`/`line` when Vivado gives one), `drc[]`, `methodology[]` and `notes[]`. Full logs are under
-`logs` in the summary. Fix the first error first.
+Look at `status`, `stage`, `reasons[]`, `verification`, `errors[]` and `critical_warnings[]`
+(each has `id`, `text`, and `file`/`line` when Vivado gives one), `drc[]`, `methodology[]` and
+`notes[]`. Full logs are under `logs` in the summary. Fix the first error first.
+
+- `failed`: no bitstream. Fix `errors[]`.
+- `unverified`: a bitstream exists, but `reasons[]` names what was not verified: critical
+  warnings, DRC violations, unconstrained clocks, or a missing report. Fix each one.
+- `timing_failed`: follow the `fpga-timing` skill.
 
 ## Before Vivado: `check` failed
 
@@ -37,11 +42,14 @@ using `--no-check`.
 
 Messages marked `benign` in the summary are routine Vivado notices and need no action.
 
-## Critical warnings on a passing build
+## Critical warnings
 
-Do not dismiss them. Most mean the hardware will differ from simulation: constraints that did
-not apply, ports optimised away (look for "removed" plus "driven by constant"), or
-clock-domain problems. Explain each one or fix it before reporting success.
+A critical warning keeps the status at `unverified`. Do not dismiss it. Most mean the hardware
+will differ from simulation: constraints that did not apply, ports optimised away (look for
+"removed" plus "driven by constant"), or clock-domain problems. Fix it. If you believe one is
+harmless for this design, explain why to the person. Only the person may add it to
+`[build.waive]` in `forge.toml` (`"<id>" = "<reason>"`), which lets the build pass and keeps the
+reason in the summary.
 
 ## Methodology checks
 

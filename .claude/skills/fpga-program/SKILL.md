@@ -9,18 +9,25 @@ Programming changes physical hardware. You need the person's explicit "yes" for 
 this conversation before running anything below with `--yes`. If they have not said yes, ask:
 say what will be loaded, on which board, and whether it is volatile or persistent.
 
+Program only with the commands below. Never send `program_hw_devices` or `program_hw_cfgmem`
+through a Vivado MCP server: that path skips the approval gate and the bitstream check, and
+`forge::program` / `forge::flash` refuse to run there.
+
 ## Pre-flight
 
 ```
-python scripts/forge.py report --json     # status "passed"? timing met? critical warnings explained?
+python scripts/forge.py report --json     # status "passed"? up_to_date true? reasons empty?
 python scripts/forge.py devices --json    # is the board connected? (read-only)
 ```
 
+- `up_to_date: false` means the sources changed after the build; `program` will refuse with
+  `stale_bitstream`. Rebuild (`check`, `sim`, `build`) and read the new result first.
 - If `devices` is empty: check the USB cable (a data cable, not charge-only), board power, and
   that the cable drivers are installed (installed with Vivado; on Linux run Vivado's
   install_drivers script). Close other Vivado Hardware Manager sessions.
 - If the connected part differs from the project's part, stop: wrong board in `forge.toml`.
-- If timing failed, say so; the person decides whether to try anyway.
+- If the status is not `passed` (timing failed, or `unverified`), tell the person each entry in
+  `reasons`; they decide whether to try anyway.
 
 ## Volatile (default)
 
@@ -50,8 +57,10 @@ their confirmation counts as "works on hardware".
 
 ## If it fails
 
-- "No JTAG target": cable or driver problem (see above).
-- "connected FPGA is ... but the project targets ...": wrong `board` in `forge.toml`.
+- `stale_bitstream` / `no_build`: the bitstream is not from a forge build of the current
+  sources. Rebuild; never work around it.
+- `no_jtag_target` ("No JTAG target"): cable or driver problem (see above).
+- `wrong_device` ("connected FPGA is ... but the project targets ..."): wrong `board` in `forge.toml`.
 - Flash part errors: the flash chip differs from `board.json` `flash.parts`. Find the part in
   Vivado's Hardware Manager (Add Configuration Memory Device) and update `board.json`; that is a
   `boards/` change, so ask the person.

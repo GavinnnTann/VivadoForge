@@ -11,20 +11,41 @@ SUTD kit") to a verified bitstream, while a person keeps control of the hardware
    `.github/copilot-instructions.md` points there too.
 2. **Procedures:** `.claude/skills/*/SKILL.md` are step-by-step workflows: `fpga-design`
    (end-to-end), `fpga-module`, `fpga-pins`, `fpga-debug-sim`, `fpga-fix-build`, `fpga-timing`,
-   `fpga-program`, `fpga-add-board`. Claude Code loads them automatically; other agents are
-   pointed to them by `AGENTS.md`.
+   `fpga-program`, `fpga-add-board`. They are plain Markdown in the open Agent Skills format.
+   Claude Code and GitHub Copilot (VS Code and the coding agent) load `.claude/skills/`
+   automatically; Codex and other agents find them through the index in `AGENTS.md`.
 3. **Tools:** everything goes through `python scripts/forge.py ... --json`. Results are
-   structured (findings with file and line, per-test verdicts, build summaries with timing and
-   utilisation), so the agent reads facts instead of scraping logs.
-4. **Guard rails:**
+   structured (findings with file and line, per-test verdicts, build summaries that say what was
+   and was not verified, error codes), so the agent reads facts instead of scraping logs.
+4. **Guard rails** (see the next section for what each one does and does not cover):
    - `program` and `flash` refuse to run without an interactive "yes" from a person at a real
      terminal, or `--yes`. In `--json` mode they never prompt. `AGENTS.md` allows `--yes` only
      after the person approved in the conversation.
+   - `program` and `flash` also refuse a bitstream that does not match the current sources
+     (`stale_bitstream`), so an edited-but-not-rebuilt design never reaches the board.
+   - A build only reports `passed` when timing was analysed and met, the DRC is clean and no
+     critical warning is left unexplained; otherwise it says `unverified` and why.
    - `.claude/settings.json` lets routine commands (info, check, sim, build, report, pins, ...)
      run without prompts, and makes Claude Code ask before `program`, `flash` and any edit
      under `boards/`.
-   - `forge.py check` rejects pins that are not on the board, so a guessed pin cannot reach a
-     bitstream unnoticed.
+   - `forge.py check` rejects pins that are not on the board and ports that point the wrong
+     way (an output on a button pin, an input on an LED pin).
+
+## What the approval gate covers
+
+| Path to the hardware | What stops an unapproved or stale program |
+|---|---|
+| `forge.py program` / `flash` | forge itself: the freshness check, then a terminal "yes" or `--yes` |
+| The same command run by Claude Code | also the `ask` rules in `.claude/settings.json` |
+| `forge::program` / `forge::flash` in an MCP or Tcl session | they refuse: they only run from `forge.py` |
+| Raw Tcl through an MCP server (`program_hw_devices`, `program_hw_cfgmem`) | **only your agent client's tool approval**, plus rule 10 in `AGENTS.md` |
+| The Vivado GUI Hardware Manager | the person at the keyboard |
+
+forge cannot inspect Tcl that an MCP server runs, so the last two rows are outside its control.
+If you connect a Vivado MCP server, keep its Tcl-execution tool on "ask" in your agent client
+rather than "always allow", and allow-list only read-only tools if you want fewer prompts. A
+Claude Code hook can catch some such calls, but hook `ask` decisions are reported not to be
+enforced in every permission mode, so do not treat a hook as a guarantee.
 
 A good first prompt:
 
@@ -85,10 +106,9 @@ forge::worst_paths 10                                ;# report_timing on the 10 
 
 `forge.py info --json` prints the exact `context_tcl` path. Keep running check, sim and build
 through `forge.py` so results stay reproducible and land in `reports/summary.json`. Use the MCP
-session to investigate. Programming commands sent through MCP (`program_hw_devices`,
-`program_hw_cfgmem`) fall under the same approval rule as `forge.py program`. Ross's
-`vivado_execute` has no approval gate of its own, so set your client to ask before each tool
-call that could touch hardware.
+session to investigate, not to program: `forge::program` and `forge::flash` refuse to run there,
+and raw programming Tcl skips the freshness check and the approval gate (see the table above).
+Ross's `vivado_execute` has no approval gate of its own.
 
 ## Data and privacy
 

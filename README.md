@@ -55,11 +55,11 @@ Vivado and drivers, the first build and programming the board.
 | Command | What it does |
 |---|---|
 | `forge.py info` | Project, board, clock, tools and last build at a glance |
-| `forge.py check` | Validates config, top module, every pin and the clock constraint (seconds, no Vivado) |
+| `forge.py check` | Validates config, top module, every pin (on the board, pointing the right way) and the clock constraint (seconds, no Vivado) |
 | `forge.py sim [test]` | Runs the self-checking testbenches in `tb/` (`--wave`/`--gui` for waveforms) |
 | `forge.py build` | Synthesis, implementation, bitstream, then a timing/utilisation/warnings summary |
 | `forge.py report` | Shows the last build summary again |
-| `forge.py program` / `flash` | Loads the FPGA (volatile) or writes its configuration flash (persistent) |
+| `forge.py program` / `flash` | Loads the FPGA (volatile) or writes its configuration flash (persistent); refuses a bitstream that no longer matches the sources |
 | `forge.py pins add btn[0]=start` | Copies a pin from the board's master XDC into your constraints, renamed |
 | `forge.py board` | The board's peripherals with pin names and active-low/high polarity |
 | `forge.py new -t <template> -b <board>` | Starts a project: `blink`, `button_counter`, `uart_echo`, `reaction_timer` |

@@ -1,6 +1,6 @@
 ---
 name: fpga-timing
-description: Use when a build reports timing not met (negative WNS or TNS, status timing_failed), or when asked to make a design run faster. Find the critical path and fix the RTL; never hide violations with constraints.
+description: Use when a build reports timing not met (negative WNS or TNS, status timing_failed), timing incomplete or unconstrained (status unverified), or when asked to make a design run faster. Find the critical path and fix the RTL; never hide violations with constraints.
 ---
 
 # Close timing
@@ -15,8 +15,11 @@ python scripts/forge.py report --json
 ```
 
 `timing.wns` < 0 means setup failure; `timing.whs` < 0 means hold failure (rare in single-clock
-designs: suspect a gated or derived clock). `timing.checks.no_clock` > 0 means some registers
-have no clock constraint: fix that first.
+designs: suspect a gated or derived clock). `verification.timing` is `incomplete` when
+`timing.checks.no_clock` > 0: some registers have no clock constraint, usually a clock divided
+in logic (use a clock enable from `lib/tick_gen` instead) or a clock input without
+`create_clock`. `unconstrained` means no clock constraint at all. Fix those first: until then
+the WNS says nothing about the unclocked registers.
 
 ## 2. Find the critical path
 

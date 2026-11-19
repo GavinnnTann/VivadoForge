@@ -63,8 +63,9 @@ python scripts/forge.py sim --json       # every test must pass
 python scripts/forge.py build --json     # status must be "passed"
 ```
 
-Debug with `fpga-debug-sim`, `fpga-fix-build` or `fpga-timing` as needed. Read the critical
-warnings even when the build passed.
+Debug with `fpga-debug-sim`, `fpga-fix-build` or `fpga-timing` as needed. Anything other than
+`passed` comes with `reasons`; fix each one. A passing build can still list benign or waived
+critical warnings: mention the waived ones in your report.
 
 ## 8. Report and hand over
 

@@ -42,5 +42,7 @@ Read `status`, `failures` and `log` (the full log is `<build folder>/sim/<test>/
    than simulating real seconds.
 
 Get a second opinion from the other simulator (`--simulator iverilog` or `--simulator xsim`)
-when behaviour looks simulator-specific. The design must pass on xsim, since that matches
-Vivado's synthesis.
+when behaviour looks simulator-specific. Treat xsim as the reference: it is Vivado's own
+simulator and simulates the Xilinx primitives. A passing testbench shows the RTL does what the
+test expects. It does not prove what synthesis builds: read the build's warnings, and only the
+board shows the hardware works.

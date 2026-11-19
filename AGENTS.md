@@ -40,13 +40,16 @@ Then read `forge.toml` and the top module named there.
    values is not a test. Make time constants parameters so the testbench can run with a tiny
    `CLK_HZ`.
 8. **Order of work:** `check`, then `sim`, then `build`. Do not build while tests fail.
-9. **Read the build result** (`forge.py report --json`): errors, critical warnings, timing (WNS
-   must be >= 0) and utilisation. Negative slack or an unexplained critical warning means the
-   work is not done.
+9. **Read the build result** (`forge.py report --json`). Only `status: "passed"` is a finished
+   build: bitstream written, timing analysed and met, DRC clean, no unexplained critical
+   warning. `unverified` and `timing_failed` list what is missing in `reasons`; fix those. Never
+   add a `[build.waive]` entry yourself: explain the critical warning and let the person decide.
 10. **Never program or flash the board on your own.** Run `forge.py program` or `forge.py flash`
     only after a person in this conversation has explicitly said yes for this design, and only
-    then add `--yes`. Flash is persistent: the board boots that design at every power-up. The
-    same applies to programming Tcl sent through an MCP server.
+    then add `--yes`. Flash is persistent: the board boots that design at every power-up.
+    Program only through `forge.py`: it refuses a bitstream that no longer matches the sources.
+    Never send programming Tcl (`program_hw_devices`, `program_hw_cfgmem`) through an MCP
+    server; nothing checks the bitstream or asks the person on that path.
 11. **Report exactly what was verified.** "Simulation passed", "bitstream built with timing met"
     and "works on the board" are three different claims. Only a person can confirm the last one.
     Never write that a design works because it built.
@@ -60,7 +63,7 @@ Then read `forge.toml` and the top module named there.
 |---|---|---|
 | Overview | `forge.py info --json` | start here |
 | Board facts | `forge.py board [--pins] --json` | roles, polarity, every pin |
-| Validate | `forge.py check --json` | config, top module, every port pinned, clock constraint; seconds, no Vivado |
+| Validate | `forge.py check --json` | config, top module, every port pinned and pointing the way the board is wired, clock constraint; seconds, no Vivado |
 | Simulate | `forge.py sim [name ...] --json` | runs `tb/*_tb.v`; `--wave` records waveforms, `--simulator iverilog` for a fast run |
 | Library tests | `forge.py sim --lib [module ...]` | tests of the `lib/` modules |
 | Build | `forge.py build --json` | runs `check` first; 2-10 minutes |
@@ -69,7 +72,7 @@ Then read `forge.toml` and the top module named there.
 | New project | `forge.py new -t <template> -b <board> [--dir D]` | `forge.py templates` lists templates |
 | Reusable RTL | `forge.py lib` | tested modules: UART, SPI, debounce, 7-segment, PWM, FIFO, RAM, LFSR, BCD |
 | Board present? | `forge.py devices` | read-only JTAG scan |
-| Program / flash | `forge.py program --yes` / `forge.py flash --yes` | only after a person approves |
+| Program / flash | `forge.py program --yes` / `forge.py flash --yes` | only after a person approves; refuses a stale bitstream |
 
 Every command accepts `--json` (the result goes to stdout, progress to stderr) and
 `-p <project folder>`. A non-zero exit code means failure.
@@ -107,10 +110,17 @@ scripts/forge.py      the CLI; scripts/forge.tcl is the Vivado side
 - `check`: findings with `severity`, `code`, `message`, `file`, `line` and `hint`. Fix every error.
 - `sim`: one result per testbench with `status` (`passed`, `failed`, `error` = did not compile,
   `timeout`, `no_verdict` = no `TEST_DONE`), the failing lines and the log path.
-- `build`: `status` is `passed`, `timing_failed` or `failed`, plus `stage`, `errors`,
-  `critical_warnings` (each with file and line when Vivado gives one), `timing` (`wns`, `tns`,
-  `whs`, `met`), `utilization`, `methodology`, `notes` and `bitstream`. Messages marked
-  `benign` are routine Vivado notices.
+- `build` / `report`: `status` is `passed`, `timing_failed`, `unverified` (bitstream written,
+  but something was not verified) or `failed` (no bitstream). `verification` says what was
+  checked: `bitstream`, `timing` (`met`, `failed`, `incomplete`, `unconstrained`,
+  `not_applicable` for designs without clocked logic, `unknown`), `drc`, `critical_warnings` and
+  `hardware` (always `not_tested`: only a person can test the board). `reasons` lists what stops
+  `passed`. Also `errors`, `critical_warnings` (with file and line when Vivado gives one),
+  `timing` numbers, `utilization`, `methodology`, `notes`, `bitstream` and `up_to_date` (false
+  when the sources changed after the build). Messages marked `benign` are routine notices.
+- Errors: with `--json`, a failed command prints `ok: false`, `error`, `hint` and a stable `code`
+  (`config`, `board`, `vivado_not_found`, `vivado_start_failed`, `no_build`, `stale_bitstream`,
+  `approval_required`, ...). Hardware results add codes such as `no_jtag_target` or `wrong_device`.
 
 ## Vivado through MCP (optional)
 
@@ -125,8 +135,8 @@ forge::open_routed        ;# routed design of the last build
 forge::worst_paths 10     ;# critical paths as text
 ```
 
-Setup: `docs/agents.md`. Programming Tcl (`program_hw_devices`, `program_hw_cfgmem`) is covered
-by rule 10.
+Setup: `docs/agents.md`. Programming is covered by rule 10: `forge::program` and `forge::flash`
+refuse to run in an MCP session, and raw programming Tcl bypasses every check.
 
 ## Skills (procedures in `.claude/skills/`)
 

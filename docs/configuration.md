@@ -25,7 +25,23 @@ jobs = 4                              # parallel Vivado jobs
 synth_strategy = "Vivado Synthesis Defaults"
 impl_strategy = "Vivado Implementation Defaults"
 timing = "error"                      # "error": failed timing fails the build; "warn": report only
+
+# [build.waive]                       # critical warnings a person has reviewed and accepts
+# "Common 17-55" = "the shared XDC names debug ports that this variant leaves out"
 ```
+
+A build reports `passed` only when a bitstream was written, timing was analysed and met (or the
+design has no clocked logic), the routed DRC report has no errors or critical warnings, and
+every critical warning is benign or waived. Otherwise it reports `timing_failed` or
+`unverified` with the `reasons`, and the command exits with an error.
+
+- `timing = "warn"` lets a build whose only problems are timing (`timing_failed`, or
+  `unverified` because of unconstrained clocks) exit successfully. The summary still shows them.
+- `[build.waive]` maps a Vivado message id (the text in brackets, e.g. `Common 17-55`, or
+  `DRC <rule>` for a DRC row) to the reason it is acceptable. A reason is required. Waived
+  messages stay in the summary with `"waived": "<reason>"`. Waivers are re-read by `report`, so
+  adding one needs no rebuild. Waive only what you have read and understood; agents are told
+  never to add waivers themselves.
 
 - Paths are relative to `forge.toml`. Patterns support `*`, `?` and `**` (any depth).
 - A wildcard pattern that matches nothing is fine (e.g. no `.sv` files). A literal file path that
@@ -65,6 +81,8 @@ hand. Use forward slashes on Windows.
   forge_context.tcl       generated settings for forge.tcl (do not edit)
   vivado/<name>.xpr       the Vivado project (open with `forge.py open`)
   reports/summary.json    machine-readable result of the last build
+  reports/manifest.json   what the bitstream was built from (hashes of every input, the settings,
+                          the bitstream): program/flash refuse a bitstream that no longer matches
   reports/*.rpt           timing, utilization, drc, methodology, io, power, ...
   <name>.bit              copy of the last good bitstream
   sim/<test>/sim.log      simulation logs; waves.wdb / waves.vcd with --wave

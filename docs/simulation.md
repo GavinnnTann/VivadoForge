@@ -95,6 +95,10 @@ endmodule
 | Xilinx primitives (BUFG, MMCM, ...) | yes (`unisims_ver` and `glbl` are added automatically) | no |
 | Waveforms | `waves.wdb`, opens in the Vivado viewer | `waves.vcd` for GTKWave, Surfer or VS Code viewers |
 
-`simulator = "auto"` uses xsim when Vivado is installed. Passing on xsim is what counts for
-hardware, because it matches Vivado's synthesis semantics; Icarus is a fast second opinion and
-runs in CI where Vivado is not available.
+`simulator = "auto"` uses xsim when Vivado is installed. Treat xsim as the reference: it is
+Vivado's own simulator, it simulates Xilinx primitives, and its language support is closest to
+what Vivado accepts. Icarus is a fast second opinion and runs in CI where Vivado is not
+available. Either way, simulation checks the RTL against your testbench; it does not prove what
+synthesis builds. Mismatches come from incomplete sensitivity lists, unintended latches and
+`x` values that simulation resolves one way and hardware another, so read the build's warnings
+and test on the board.

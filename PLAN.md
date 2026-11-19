@@ -78,6 +78,8 @@ reproducible.
 | D8 | Failed timing fails the build by default (`[build].timing = "error"`) | A bitstream with negative slack is not a finished design |
 | D9 | Vivado project mode, regenerated from `forge.toml` on every build, in a marker-protected build folder | Standard reports, GUI-openable project, nothing generated in git, `clean` can never delete user files |
 | D10 | Python 3.11+, Vivado 2023.1+, Windows first but tested paths for Linux | Python 3.10 reached end-of-life in Oct 2026; the template's users are mostly on Windows |
+| D11 | `program`/`flash` refuse a bitstream whose recorded inputs (`reports/manifest.json`) differ from the current sources; `forge::program`/`flash` run only when started by `forge.py` | An existing bitstream is not the current design. Without this, "edit, forget to rebuild, program" loads the old design silently |
+| D12 | `passed` means verified: bitstream, timing analysed and met (or no clocked logic), DRC clean, every critical warning benign or waived with a person's reason. Anything less is `unverified` with `reasons` | A missing timing report or an unexplained critical warning must never read as success to an agent |
 
 ---
 
@@ -103,7 +105,8 @@ verification, and non-AMD toolchains.
 - [x] `forge.py info/board/pins --json` expose part, clock, pins and polarity
 - [x] Deterministic commands: `check`, `sim`, `build`, `report`, `program`, `flash`, `devices`
 - [x] Validation: config schema with typo detection, top module, every port pinned with an I/O
-      standard, pins exist on the board, no duplicate pins, `create_clock` matches the board clock
+      standard, pins exist on the board, no duplicate pins, `create_clock` matches the board clock,
+      port direction matches the board wiring, `_n` names only on active-low peripherals
 - [x] Fixed the old inconsistencies: hard-coded project name in `build.ps1`, `simulate.tcl`
       ignoring the config, the Tcl inline-comment bug, the wrong flash-size comment, the
       committed private config, and builds that reported success with failing timing
@@ -114,7 +117,11 @@ verification, and non-AMD toolchains.
 - [x] Batch Vivado orchestration with structured results (`reports/summary.json`: status,
       stage, errors and critical warnings with file:line, WNS/TNS/WHS, utilisation, DRC,
       methodology)
-- [x] `forge.tcl` usable from an MCP session (`forge::load`, `forge::open_routed`, `forge::worst_paths`)
+- [x] Build verdicts that separate "bitstream exists" from "verified" (`verification`, `reasons`,
+      status `unverified`), `[build.waive]` for reviewed critical warnings, stable error `code`s
+- [x] Build manifest: `program`/`flash` refuse a stale bitstream; `info`/`report` show `up_to_date`
+- [x] `forge.tcl` usable from an MCP session (`forge::load`, `forge::open_routed`, `forge::worst_paths`);
+      its `program`/`flash` refuse to run there, and every hardware error path closes the session
 - [x] MCP setup documented for Claude Code and VS Code (`docs/agents.md`)
 - [x] Simulation, synthesis, implementation, timing and utilisation on Vivado 2023.1 for all 5 boards
 - [ ] Test AMD Ross end-to-end with this template (needs a supported Vivado; Ross is tested against 2026.1)
@@ -145,6 +152,9 @@ verification, and non-AMD toolchains.
 - I2C master and VGA timing modules (with tests); a stopwatch template
 - More boards (Cmod A7-15T, Arty S7, Zybo PL-only, Basys 3 variants); community board reports
 - `forge.py lint` (Verilator lint or `xvlog` checks without elaboration)
+- `check`: flag every XDC `get_ports` that matches no design port, wildcards included (today only
+  lines with a `PACKAGE_PIN` are checked, so a stray `set_property PULLDOWN` reaches Vivado as
+  `Common 17-55`)
 - IP support in simulation (`.xci` simulation sources)
 - Simple CDC helper modules (`sync_bit`, `pulse_sync`) and a skill for multi-clock designs
 - Optional hardware-in-the-loop check: UART loopback test after `program`, with approval
@@ -158,12 +168,14 @@ verification, and non-AMD toolchains.
 |---|---|
 | Wrong clock assumption | Clock in `board.json`; templates take `CLK_HZ` from it; `check` compares `create_clock` with the board |
 | Invented or wrong pins | Vendor master XDC only; `pins add`; `check` rejects unknown and duplicate pins and I/O-standard mismatches |
-| Polarity mistakes | `active_low` per role in `board.json`; templates pass it as parameters; `forge.py board` shows it |
+| Wrong port direction (driving a button, reading an LED) | `dir` per role in `board.json`; `check` rejects a port that points against the board wiring |
+| Polarity mistakes | `active_low` per role in `board.json`; templates pass it as parameters; `forge.py board` shows it; `check` warns about `_n` names on active-high peripherals |
 | Bouncing / asynchronous inputs | `lib/debounce` (synchroniser + debounce); rule 5 in AGENTS.md |
-| Timing failures shipped | Build fails on negative slack by default; summary shows WNS; `fpga-timing` skill |
-| "It built, so it works" | Layered verification language in AGENTS.md; summary says a bitstream is not proof |
+| Timing failures shipped | Build fails on negative slack by default; unconstrained or partly unclocked designs are `unverified`, not `passed`; `fpga-timing` skill |
+| "It built, so it works" | `verification` block in every summary (hardware always `not_tested`); `passed` only when verified; layered verification language in AGENTS.md |
+| Stale bitstream programmed | Build manifest; `program`/`flash` refuse with `stale_bitstream` and list what changed |
 | Agent programs hardware unasked | Console/`--yes` gate; `--json` never prompts; Claude Code `ask` rules; rule 10 |
-| Arbitrary Tcl through MCP | Documented: same approval rule; configure the client to ask per tool call (Ross has no gate of its own) |
+| Arbitrary Tcl through MCP | `forge::program`/`flash` refuse outside `forge.py`. Raw Tcl (`program_hw_devices`) is outside forge's control: documented as relying on the client's tool approval (Ross has no gate of its own); Claude Code hooks are not relied on because their `ask` decisions are reported as not enforced in every mode |
 | Build output destroys files | Build folder marker: forge refuses to use or delete folders it did not create |
 | OneDrive / sync folders | `check` warns; `forge.local.toml` `build_dir` outside the synced folder |
 

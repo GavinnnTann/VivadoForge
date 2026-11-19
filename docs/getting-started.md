@@ -64,14 +64,19 @@ python scripts/forge.py build     # a few minutes: synthesis, implementation, bi
 The build ends with a summary like:
 
 ```
-BUILD PASSED  (279.9 s, Vivado 2023.1)
+BUILD PASSED  (255.7 s, Vivado 2023.1)
   timing:  met   WNS 79.65 ns   TNS 0.0 ns   WHS 0.245 ns   failing endpoints 0
   usage:   LUT 7/20800 (0.03%)   FF 25/41600 (0.06%)   BRAM 0/50 (0.0%)   DSP 0/90 (0.0%)   IO 3/106 (2.83%)
+  warnings: none that need action (2 routine Vivado notices)
+  checked: timing met | DRC passed | critical warnings none | hardware not tested
 ```
 
-**WNS** (worst negative slack) must be zero or positive: then the design meets its clock. Every
-report is in the build folder under `reports/`; `forge.py open` opens the project in the Vivado
-GUI if you want to look at schematics.
+**WNS** (worst negative slack) must be zero or positive: then the design meets its clock.
+`checked` lists what the build verified; hardware is always "not tested" until you try the
+board. A build with an unexplained critical warning, an unconstrained clock or a missing report
+says `BUILD FINISHED, NOT VERIFIED` and lists what to fix. Every report is in the build folder
+under `reports/`; `forge.py open` opens the project in the Vivado GUI if you want to look at
+schematics.
 
 ## 6. Program the board
 
@@ -82,6 +87,9 @@ python scripts/forge.py devices   # should list the FPGA, e.g. xc7a35t_0
 python scripts/forge.py program   # asks, then loads the FPGA (lost at power-off)
 python scripts/forge.py flash     # asks, then writes the flash (boots at every power-up)
 ```
+
+If you changed a source, constraint or setting after the last build, `program` and `flash`
+refuse with "the bitstream is out of date" and list what changed: build again first.
 
 ## 7. Make it yours
 
